@@ -1,6 +1,6 @@
 # Video Transcriber
 
-This tool implements a simple video transcriber using OpenAI Whisperer API.
+This tool implements a simple video transcriber using OpenAI Whisper API.
 
 ## Installation
 
