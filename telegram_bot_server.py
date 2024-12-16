@@ -15,8 +15,11 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # Import our transcription functions
-from transcriber import convert_to_mp3, transcribe_audio, cleanup_temp_files, is_youtube_url, download_youtube_video
-
+from transcriber import (
+    transcribe_audio, cleanup_temp_files,
+    is_youtube_url, download_youtube_video,
+    is_google_drive_url, get_drive_file_id, download_from_google_drive
+)
 
 load_dotenv()
 
@@ -33,6 +36,7 @@ CONFIG = {
     'telegram_token': os.getenv('TELEGRAM_BOT_TOKEN'),
     'whitelist_file': 'whitelist.json',
     'temp_dir': 'temp_files',
+    'supported_formats': {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm'}
 }
 
 ALL_USERS = -1
@@ -41,7 +45,7 @@ ALL_USERS = -1
 class TranscriptionTask:
     chat_id: int
     file_path: str
-    is_youtube: bool = False
+    is_url: bool = False
     task_id: Optional[str] = None
 
 class TranscriptionQueue:
@@ -100,24 +104,27 @@ class TranscriptionQueue:
             # Send initial status
             asyncio.run(self.bot.send_message(task.chat_id, "Starting transcription..."))
 
-            if task.is_youtube:
-                # Download YouTube video
-                video_path = download_youtube_video(task.file_path)
-                # Convert to MP3
-                audio_path = convert_to_mp3(video_path)
-                cleanup_temp_files(video_path)
-            elif task.file_path.lower().endswith('.mp4'):
-                # Convert MP4 to MP3
-                audio_path = convert_to_mp3(task.file_path)
+            if task.is_url:
+                if is_youtube_url(task.file_path):
+                    # Download YouTube video
+                    file_path = download_youtube_video(task.file_path)
+                elif is_google_drive_url(task.file_path):
+                    # Download from Google Drive
+                    file_id = get_drive_file_id(task.file_path)
+                    if not file_id:
+                        raise ValueError("Invalid Google Drive URL")
+                    file_path = download_from_google_drive(file_id)
+                else:
+                    raise ValueError("Unsupported URL type")
             else:
-                # Already MP3
-                audio_path = task.file_path
+                file_path = task.file_path
 
             # Perform transcription
-            transcription = transcribe_audio(audio_path)
+            transcription = transcribe_audio(file_path)
 
-            if not task.is_youtube:  # Don't cleanup if it's the original user file
-                cleanup_temp_files(audio_path)
+            # Cleanup downloaded file if it was from URL
+            if task.is_url:
+                cleanup_temp_files(file_path)
 
             if transcription:
                 # Save transcription to file
@@ -201,38 +208,68 @@ class TranscriptionBot:
 
         await update.message.reply_text(
             "Welcome to the Transcription Bot!\n\n"
-            "Use /transcribe command with either:\n"
+            "Use /transcribe (or /ts) command with either:\n"
             "- An audio/video file attachment\n"
-            "- A YouTube URL\n\n"
+            "- A YouTube URL\n"
+            "- A public Google Drive file URL (should be an mp4 file)\n\n"
+            "Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm\n\n"
             "I will process your request and send you back the transcription."
         )
 
-    async def transcribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /transcribe command"""
+    async def handle_transcribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /transcribe or /ts command"""
         if not self.check_whitelist(update.effective_user.id):
             await update.message.reply_text(
                 "Sorry, you are not authorized to use this bot."
             )
             return
 
-        # Check if it's a YouTube URL
-        if context.args and is_youtube_url(context.args[0]):
+        # Check if it's a URL
+        if context.args:
             url = context.args[0]
-            await update.message.reply_text(
-                "Added YouTube video to transcription queue. "
-                "You will be notified when it's ready."
-            )
-            self.queue.add_task(TranscriptionTask(
-                chat_id=update.effective_chat.id,
-                file_path=url,
-                is_youtube=True
-            ))
-            return
+            if is_youtube_url(url):
+                await update.message.reply_text(
+                    "Added YouTube video to transcription queue. "
+                    "You will be notified when it's ready."
+                )
+                self.queue.add_task(TranscriptionTask(
+                    chat_id=update.effective_chat.id,
+                    file_path=url,
+                    is_url=True
+                ))
+                return
+            elif is_google_drive_url(url):
+                await update.message.reply_text(
+                    "Added Google Drive file to transcription queue. "
+                    "You will be notified when it's ready."
+                )
+                self.queue.add_task(TranscriptionTask(
+                    chat_id=update.effective_chat.id,
+                    file_path=url,
+                    is_url=True
+                ))
+                return
+            else:
+                await update.message.reply_text(
+                    "Please provide either a YouTube URL, a Google Drive URL, "
+                    "or attach an audio/video file."
+                )
+                return
 
         # Check if there's a file attachment
         if not update.message.document:
             await update.message.reply_text(
-                "Please provide either a YouTube URL or attach an audio/video file."
+                "Please provide either a YouTube/Google Drive URL or attach an audio/video file."
+            )
+            return
+
+        # Check file extension
+        file_name = update.message.document.file_name.lower()
+        file_ext = os.path.splitext(file_name)[1]
+        if file_ext not in CONFIG['supported_formats']:
+            await update.message.reply_text(
+                f"Unsupported file format. Please use one of: "
+                f"{', '.join(CONFIG['supported_formats'])}"
             )
             return
 
@@ -244,10 +281,10 @@ class TranscriptionBot:
                 f"Sorry, the file is too big. Maximum allowed size is 20MB. "
                 f"Your file is {round(update.message.document.file_size / (1024 * 1024), 1)}MB.\n\n"
                 f"Please try:\n"
-                f"1. Compressing the video first\n"
-                f"2. Trimming the video to a shorter duration\n"
-                f"3. Reducing the video quality\n"
-                f"4. Using a YouTube link instead with the /transcribe command"
+                f"1. Compressing the file first\n"
+                f"2. Trimming the audio/video to a shorter duration\n"
+                f"3. Reducing the quality\n"
+                f"4. Using a YouTube or Google Drive link instead"
             )
             return
 
@@ -257,8 +294,6 @@ class TranscriptionBot:
             CONFIG['temp_dir'],
             f"{update.message.document.file_id}_{update.message.document.file_name}"
         )
-        logger.info(file)
-        logger.info(file_path)
         await file.download_to_drive(file_path)
 
         # Add to queue
@@ -274,65 +309,8 @@ class TranscriptionBot:
 
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle any document/file sent to the bot"""
-        if not self.check_whitelist(update.effective_user.id):
-            await update.message.reply_text(
-                "Sorry, you are not authorized to use this bot."
-            )
-            return
-
-        logger.info(f"Received document with mime type: {update.message.document.mime_type}")
-        # Check file size (size is in bytes, convert limit to bytes)
-        MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB in bytes
-        if update.message.document.file_size > MAX_FILE_SIZE:
-            await update.message.reply_text(
-                f"Sorry, the file is too big. Maximum allowed size is 20MB. "
-                f"Your file is {round(update.message.document.file_size / (1024 * 1024), 1)}MB.\n\n"
-                f"Please try:\n"
-                f"1. Compressing the video first\n"
-                f"2. Trimming the video to a shorter duration\n"
-                f"3. Reducing the video quality\n"
-                f"4. Using a YouTube link instead with the /transcribe command"
-            )
-            return
-
-        # Add debug logging
-        logger.info(f"Received document with mime type: {update.message.document.mime_type}")
-        
-        # Check if the file is a video or audio
-        mime_type = update.message.document.mime_type
-        if not mime_type or not (mime_type.startswith('video/') or mime_type.startswith('audio/')):
-            await update.message.reply_text(
-                "Please send an audio or video file for transcription."
-            )
-            return
-
-        # Download the file
-        file = await context.bot.get_file(update.message.document.file_id)
-        logger.info(f"Got file with ID: {update.message.document.file_id}")
-        file_path = os.path.join(
-            CONFIG['temp_dir'],
-            f"{update.message.document.file_id}_{update.message.document.file_name}"
-        )
-        
-        # Add debug prints
-        print(f"File object: {file}")
-        print(f"File path: {file_path}")
-        
-        logger.info(f"Downloading file to: {file_path}")
-        
-        await file.download_to_drive(file_path)
-        logger.info("File download completed")
-
-        # Add to queue
-        self.queue.add_task(TranscriptionTask(
-            chat_id=update.effective_chat.id,
-            file_path=file_path
-        ))
-
-        await update.message.reply_text(
-            "File received and added to transcription queue. "
-            "You will be notified when it's ready."
-        )
+        # Redirect to the transcribe command handler
+        await self.handle_transcribe_command(update, context)
 
 def main():
     """Start the bot"""
@@ -345,7 +323,7 @@ def main():
     # Create application and add handlers
     application = Application.builder().token(CONFIG['telegram_token']).build()
     application.add_handler(CommandHandler('start', bot.start_command))
-    application.add_handler(CommandHandler('transcribe', bot.transcribe_command))
+    application.add_handler(CommandHandler(['transcribe', 'ts'], bot.handle_transcribe_command))
 
     # Add handler for documents (files)
     application.add_handler(MessageHandler(

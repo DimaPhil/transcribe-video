@@ -2,10 +2,11 @@ import subprocess
 import math
 import os
 import tempfile
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
+import requests
 from openai import OpenAI
 from dotenv import load_dotenv
-
+import time
 
 load_dotenv()
 
@@ -46,6 +47,66 @@ def is_youtube_url(url):
     except:
         return False
 
+def is_google_drive_url(url):
+    """Check if the given string is a Google Drive URL"""
+    try:
+        parsed = urlparse(url)
+        return 'drive.google.com' in parsed.netloc
+    except:
+        return False
+
+def get_drive_file_id(url):
+    """Extract file ID from Google Drive URL"""
+    try:
+        if '/file/d/' in url:
+            # Handle links like: https://drive.google.com/file/d/{fileid}/view
+            file_id = url.split('/file/d/')[1].split('/')[0]
+        elif 'id=' in url:
+            # Handle links like: https://drive.google.com/open?id={fileid}
+            parsed = urlparse(url)
+            file_id = parse_qs(parsed.query)['id'][0]
+        else:
+            return None
+        return file_id
+    except:
+        return None
+
+def download_from_google_drive(file_id):
+    """Download a video file from Google Drive public link using gdown"""
+    print("Downloading from Google Drive...")
+    
+    try:
+        import gdown
+        
+        # Create temporary file with .mp4 extension
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+        output = temp_file.name
+        temp_file.close()
+        
+        # Construct the URL
+        url = f"https://drive.google.com/uc?id={file_id}"
+        
+        print(f"Downloading file to: {output}")
+        
+        # Download the file with progress bar
+        gdown.download(url, output, quiet=False)
+        
+        # Verify the download
+        if os.path.getsize(output) == 0:
+            raise ValueError("Downloaded file is empty")
+            
+        return output
+        
+    except Exception as e:
+        print(f"\nError downloading from Google Drive: {str(e)}")
+        raise ValueError(
+            "Could not download from Google Drive. "
+            "Please ensure:\n"
+            "1. The file is publicly accessible (anyone with link can view)\n"
+            "2. The link is in format: drive.google.com/file/d/FILE_ID/view\n"
+            "3. The file is a video file (mp4 or webm)"
+        )
+
 def download_youtube_video(url):
     """Download YouTube video using yt-dlp and return path to downloaded file"""
     print("Downloading YouTube video...")
@@ -56,13 +117,15 @@ def download_youtube_video(url):
     
     try:
         # Download video using yt-dlp with progress output
-        cmd = [
-            'yt-dlp',
+        options = [
             '--format', 'mp4',
             '--output', output_template,
             '--progress',
-            url
         ]
+        if os.path.exists('cookies.txt')
+            options.append('--cookies')
+            options.append('cookies.txt')
+        cmd = ['yt-dlp', *options, url]
         run_command_with_output(cmd, "Downloading with yt-dlp:")
         
         # Find the downloaded file
@@ -74,29 +137,6 @@ def download_youtube_video(url):
     except subprocess.CalledProcessError as e:
         print(f"Error downloading video: {e}")
         raise
-
-def convert_to_mp3(input_file):
-    """Convert video file to MP3 format"""
-    # Create temporary file for MP3
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-    output_path = temp_file.name
-    temp_file.close()
-    
-    try:
-        cmd = [
-            'ffmpeg',
-            '-i', input_file,
-            '-vn',  # Disable video
-            '-acodec', 'libmp3lame',
-            '-y',  # Overwrite output file
-            output_path
-        ]
-        run_command_with_output(cmd, "Converting to MP3:")
-        return output_path
-    except subprocess.CalledProcessError as e:
-        if os.path.exists(output_path):
-            os.unlink(output_path)
-        raise Exception(f"Error converting to MP3: {e}")
 
 def get_audio_duration(file_path):
     """Get the duration of an audio file using ffprobe"""
@@ -113,10 +153,11 @@ def get_audio_duration(file_path):
     except:
         return None
 
-def split_audio(file_path, chunk_size_mb=24):
+def split_audio(file_path, chunk_size_mb=20):  # Reduced to 20MB to ensure we stay under limit
     """Split audio file into chunks smaller than the API limit"""
     print("\nSplitting audio into chunks...")
     
+    MAX_CHUNK_SIZE = 25 * 1024 * 1024  # 25MB in bytes
     file_size = os.path.getsize(file_path)
     duration = get_audio_duration(file_path)
     
@@ -128,29 +169,75 @@ def split_audio(file_path, chunk_size_mb=24):
     num_chunks = math.ceil(duration / chunk_duration)
     
     chunks = []
-    for i in range(num_chunks):
-        start_time = i * chunk_duration
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+    current_chunk = 0
+    while current_chunk < num_chunks:
+        start_time = current_chunk * chunk_duration
+        # Use original file extension
+        original_ext = os.path.splitext(file_path)[1]
         
-        # Use ffmpeg to extract chunk
-        cmd = [
-            'ffmpeg',
-            '-i', file_path,
-            '-ss', str(start_time),
-            '-t', str(chunk_duration),
-            '-acodec', 'libmp3lame',
-            '-y',
-            temp_file.name
-        ]
-        
+        # Create temporary file
         try:
-            run_command_with_output(cmd, f"Extracting chunk {i+1}/{num_chunks}:")
-            chunks.append(temp_file.name)
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=original_ext)
+            temp_file_path = temp_file.name
+            temp_file.close()  # Close the file handle immediately
+            
+            cmd = [
+                'ffmpeg',
+                '-i', file_path,
+                '-ss', str(start_time),
+                '-t', str(chunk_duration),
+                '-c', 'copy',
+                '-y',
+                temp_file_path
+            ]
+            
+            run_command_with_output(cmd, f"Extracting chunk {current_chunk+1}/{num_chunks}:")
+            
+            # Add a small delay to ensure ffmpeg has released the file
+            time.sleep(0.5)
+            
+            # Verify the chunk size
+            try:
+                chunk_size = os.path.getsize(temp_file_path)
+                if chunk_size > MAX_CHUNK_SIZE:
+                    print(f"Chunk {current_chunk+1} too large ({chunk_size/1024/1024:.1f}MB), reducing duration...")
+                    try:
+                        os.unlink(temp_file_path)
+                    except Exception as e:
+                        print(f"Warning: Could not delete oversized chunk: {e}")
+                    # Reduce chunk duration by 20% and try again
+                    chunk_duration *= 0.8
+                    num_chunks = math.ceil(duration / chunk_duration)
+                    continue
+                
+                chunks.append(temp_file_path)
+                current_chunk += 1
+                
+            except OSError as e:
+                print(f"Error checking chunk size: {e}")
+                # Try to clean up
+                try:
+                    os.unlink(temp_file_path)
+                except:
+                    pass
+                raise
+                
         except subprocess.CalledProcessError as e:
-            print(f"Error splitting chunk {i+1}: {e}")
-            if os.path.exists(temp_file.name):
-                os.unlink(temp_file.name)
-            continue
+            print(f"Error splitting chunk {current_chunk+1}: {e}")
+            # Try to clean up
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+            raise
+        except Exception as e:
+            print(f"Unexpected error while splitting chunk {current_chunk+1}: {e}")
+            # Try to clean up
+            try:
+                os.unlink(temp_file_path)
+            except:
+                pass
+            raise
     
     return chunks
 
@@ -171,16 +258,34 @@ def transcribe_audio(audio_file):
             full_transcription = []
             
             for i, chunk_path in enumerate(chunks, 1):
-                print(f"\nTranscribing chunk {i} of {len(chunks)}...")
-                with open(chunk_path, "rb") as audio_file:
-                    response = client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio_file
-                    )
-                    full_transcription.append(response.text)
+                max_retries = 3
+                retry_count = 0
+                
+                while retry_count < max_retries:
+                    try:
+                        print(f"\nTranscribing chunk {i} of {len(chunks)}...")
+                        with open(chunk_path, "rb") as audio_file:
+                            response = client.audio.transcriptions.create(
+                                model="whisper-1",
+                                file=audio_file,
+                                timeout=60  # 60 second timeout
+                            )
+                            full_transcription.append(response.text)
+                            break  # Success, exit retry loop
+                    except Exception as e:
+                        retry_count += 1
+                        print(f"Error on chunk {i} (attempt {retry_count}): {str(e)}")
+                        if retry_count == max_retries:
+                            print(f"Failed to transcribe chunk {i} after {max_retries} attempts")
+                            raise
+                        print(f"Retrying in 5 seconds...")
+                        time.sleep(5)
                 
                 # Clean up temporary file
-                os.unlink(chunk_path)
+                try:
+                    os.unlink(chunk_path)
+                except Exception as e:
+                    print(f"Warning: Could not delete temporary file {chunk_path}: {e}")
             
             return ' '.join(full_transcription)
         else:
@@ -188,24 +293,45 @@ def transcribe_audio(audio_file):
             with open(audio_file, "rb") as audio_file:
                 response = client.audio.transcriptions.create(
                     model="whisper-1",
-                    file=audio_file
+                    file=audio_file,
+                    timeout=60  # 60 second timeout
                 )
                 return response.text
     except Exception as e:
         print(f"Error during transcription: {e}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return None
 
 def cleanup_temp_files(file_path):
     """Clean up temporary files and directories"""
     try:
         if os.path.isfile(file_path):
-            os.unlink(file_path)
+            for _ in range(5):  # Try up to 5 times
+                try:
+                    os.unlink(file_path)
+                    break
+                except PermissionError:
+                    time.sleep(1)  # Wait a second before retrying
+                except Exception as e:
+                    print(f"Warning: Could not clean up {file_path}: {e}")
+                    break
         elif os.path.isdir(file_path):
             for root, dirs, files in os.walk(file_path, topdown=False):
                 for name in files:
-                    os.unlink(os.path.join(root, name))
+                    try:
+                        os.unlink(os.path.join(root, name))
+                    except Exception as e:
+                        print(f"Warning: Could not clean up file {name}: {e}")
                 for name in dirs:
-                    os.rmdir(os.path.join(root, name))
-            os.rmdir(file_path)
+                    try:
+                        os.rmdir(os.path.join(root, name))
+                    except Exception as e:
+                        print(f"Warning: Could not clean up directory {name}: {e}")
+            try:
+                os.rmdir(file_path)
+            except Exception as e:
+                print(f"Warning: Could not clean up directory {file_path}: {e}")
     except Exception as e:
         print(f"Warning: Could not clean up {file_path}: {e}")
