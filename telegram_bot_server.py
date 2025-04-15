@@ -14,12 +14,11 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Import our transcription functions
-from transcriber import (
-    transcribe_audio, cleanup_temp_files,
-    is_youtube_url, download_youtube_video,
-    is_google_drive_url, get_drive_file_id, download_from_google_drive
-)
+# Import our services and transcription functions
+from transcriber import get_media_processor
+from youtube_service import YouTubeService
+from google_drive_service import GoogleDriveService
+from linkedin_service import LinkedInService
 
 load_dotenv()
 
@@ -36,7 +35,7 @@ CONFIG = {
     'telegram_token': os.getenv('TELEGRAM_BOT_TOKEN'),
     'whitelist_file': 'whitelist.json',
     'temp_dir': 'temp_files',
-    'supported_formats': {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm'}
+    'supported_formats': {'.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.mkv', '.avi', '.mov'}
 }
 
 ALL_USERS = -1
@@ -46,6 +45,7 @@ class TranscriptionTask:
     chat_id: int
     file_path: str
     is_url: bool = False
+    prompt: Optional[str] = None
     task_id: Optional[str] = None
 
 class TranscriptionQueue:
@@ -56,6 +56,7 @@ class TranscriptionQueue:
         self.bot = bot_instance
         self.processing_thread = None
         self._stop_flag = threading.Event()
+        self.media_processor = get_media_processor()
 
     def start(self):
         """Start the processing thread"""
@@ -105,26 +106,30 @@ class TranscriptionQueue:
             asyncio.run(self.bot.send_message(task.chat_id, "Starting transcription..."))
 
             if task.is_url:
-                if is_youtube_url(task.file_path):
+                if YouTubeService.is_youtube_url(task.file_path):
                     # Download YouTube video
-                    file_path = download_youtube_video(task.file_path)
-                elif is_google_drive_url(task.file_path):
+                    file_path = YouTubeService.download_video(task.file_path)
+                elif GoogleDriveService.is_google_drive_url(task.file_path):
                     # Download from Google Drive
-                    file_id = get_drive_file_id(task.file_path)
+                    file_id = GoogleDriveService.get_file_id(task.file_path)
                     if not file_id:
                         raise ValueError("Invalid Google Drive URL")
-                    file_path = download_from_google_drive(file_id)
+                    file_path = GoogleDriveService.download_file(f"https://drive.google.com/file/d/{file_id}/view")
+                elif LinkedInService.is_linkedin_url(task.file_path):
+                    # Download from LinkedIn
+                    file_path = LinkedInService.download_video(task.file_path)
                 else:
                     raise ValueError("Unsupported URL type")
             else:
                 file_path = task.file_path
 
             # Perform transcription
-            transcription = transcribe_audio(file_path)
+            response = self.media_processor.transcribe_audio(file_path, task.prompt)
+            transcription = response.text if response else None
 
             # Cleanup downloaded file if it was from URL
             if task.is_url:
-                cleanup_temp_files(file_path)
+                self.media_processor.cleanup_temp_files(file_path)
 
             if transcription:
                 # Save transcription to file
@@ -211,8 +216,11 @@ class TranscriptionBot:
             "Use /transcribe (or /ts) command with either:\n"
             "- An audio/video file attachment\n"
             "- A YouTube URL\n"
-            "- A public Google Drive file URL (should be an mp4 file)\n\n"
-            "Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm\n\n"
+            "- A LinkedIn post URL\n"
+            "- A public Google Drive file URL\n\n"
+            "You can also provide a custom prompt to improve transcription quality with:\n"
+            "/transcribe [URL] --prompt \"Your custom prompt\"\n\n"
+            "Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, mkv, avi, mov\n\n"
             "I will process your request and send you back the transcription."
         )
 
@@ -224,34 +232,46 @@ class TranscriptionBot:
             )
             return
 
+        # Extract custom prompt if provided
+        prompt = None
+        args = context.args[:] if context.args else []
+        
+        if args and "--prompt" in args:
+            prompt_index = args.index("--prompt")
+            if prompt_index < len(args) - 1:
+                # Get all text after --prompt flag
+                prompt = " ".join(args[prompt_index + 1:])
+                # Remove prompt args from the arguments list
+                args = args[:prompt_index]
+        
         # Check if it's a URL
-        if context.args:
-            url = context.args[0]
-            if is_youtube_url(url):
+        if args:
+            url = args[0]
+            source_type = ""
+            
+            if YouTubeService.is_youtube_url(url):
+                source_type = "YouTube"
+            elif GoogleDriveService.is_google_drive_url(url):
+                source_type = "Google Drive"
+            elif LinkedInService.is_linkedin_url(url):
+                source_type = "LinkedIn"
+                
+            if source_type:
+                prompt_info = f" with custom prompt" if prompt else ""
                 await update.message.reply_text(
-                    "Added YouTube video to transcription queue. "
+                    f"Added {source_type} video to transcription queue{prompt_info}. "
                     "You will be notified when it's ready."
                 )
                 self.queue.add_task(TranscriptionTask(
                     chat_id=update.effective_chat.id,
                     file_path=url,
-                    is_url=True
-                ))
-                return
-            elif is_google_drive_url(url):
-                await update.message.reply_text(
-                    "Added Google Drive file to transcription queue. "
-                    "You will be notified when it's ready."
-                )
-                self.queue.add_task(TranscriptionTask(
-                    chat_id=update.effective_chat.id,
-                    file_path=url,
-                    is_url=True
+                    is_url=True,
+                    prompt=prompt
                 ))
                 return
             else:
                 await update.message.reply_text(
-                    "Please provide either a YouTube URL, a Google Drive URL, "
+                    "Please provide either a YouTube URL, a LinkedIn URL, a Google Drive URL, "
                     "or attach an audio/video file."
                 )
                 return
@@ -259,7 +279,8 @@ class TranscriptionBot:
         # Check if there's a file attachment
         if not update.message.document:
             await update.message.reply_text(
-                "Please provide either a YouTube/Google Drive URL or attach an audio/video file."
+                "Please provide either a YouTube/LinkedIn/Google Drive URL or attach an audio/video file.\n"
+                "You can also add a custom prompt with: /transcribe [URL] --prompt \"Your custom prompt\""
             )
             return
 
@@ -284,7 +305,7 @@ class TranscriptionBot:
                 f"1. Compressing the file first\n"
                 f"2. Trimming the audio/video to a shorter duration\n"
                 f"3. Reducing the quality\n"
-                f"4. Using a YouTube or Google Drive link instead"
+                f"4. Using a YouTube, LinkedIn, or Google Drive link instead"
             )
             return
 
@@ -297,13 +318,15 @@ class TranscriptionBot:
         await file.download_to_drive(file_path)
 
         # Add to queue
+        prompt_info = " with custom prompt" if prompt else ""
         self.queue.add_task(TranscriptionTask(
             chat_id=update.effective_chat.id,
-            file_path=file_path
+            file_path=file_path,
+            prompt=prompt
         ))
 
         await update.message.reply_text(
-            "File added to transcription queue. "
+            f"File added to transcription queue{prompt_info}. "
             "You will be notified when it's ready."
         )
 

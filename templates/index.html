@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Player & Transcriber</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        textarea::placeholder {
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+            line-height: 1.5;
+        }
+        textarea {
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        #previewFrame {
+            aspect-ratio: 16/9;
+            width: 100%;
+        }
+        #previewFrame iframe {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">
+                <i class="fas fa-video mr-2"></i>Video Player & Transcriber
+            </h1>
+            
+            <!-- Tabs for URL vs Local File -->
+            <div class="mb-6">
+                <div class="flex border-b-2 border-gray-200">
+                    <button id="urlTabBtn" class="py-2 px-4 font-medium text-blue-500 border-b-2 border-blue-500 focus:outline-none">
+                        <i class="fas fa-link mr-2"></i>Video URL
+                    </button>
+                    <button id="fileTabBtn" class="py-2 px-4 font-medium text-gray-500 hover:text-gray-700 focus:outline-none">
+                        <i class="fas fa-file-upload mr-2"></i>Local File
+                    </button>
+                </div>
+            </div>
+            
+            <!-- URL Input Tab -->
+            <div id="urlTab" class="mb-6">
+                <label for="videoUrl" class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-link mr-2"></i>Enter Video URL (LinkedIn, YouTube or Google Drive)
+                </label>
+                <div class="flex gap-2">
+                    <div class="flex-1 relative">
+                        <textarea id="videoUrl" 
+                            rows="1"
+                            class="w-full p-2 border rounded-md bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 overflow-hidden resize-none transition-all duration-200"
+                            placeholder="https://www.linkedin.com/feed/update/... or https://www.youtube.com/watch?v=... or https://drive.google.com/file/d/..."
+                            style="min-height: 40px;"
+                        ></textarea>
+                    </div>
+                    <button id="previewBtn" class="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors flex items-center">
+                        <i class="fas fa-eye mr-2"></i>Preview
+                    </button>
+                    <button id="loadBtn" class="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 transition-colors flex items-center">
+                        <i class="fas fa-download mr-2"></i>Load
+                    </button>
+                </div>
+                <p class="mt-1 text-sm text-gray-500">Supported formats: LinkedIn videos/posts, YouTube videos, and Google Drive video files</p>
+            </div>
+
+            <!-- File Upload Tab -->
+            <div id="fileTab" class="mb-6 hidden">
+                <label for="localFile" class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-file-upload mr-2"></i>Upload Audio/Video File
+                </label>
+                <div class="flex flex-col gap-2">
+                    <div class="border-2 border-dashed border-gray-300 rounded-md p-4 text-center hover:border-blue-500 transition-colors">
+                        <input type="file" id="localFile" class="hidden" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.mkv,.avi,.mov">
+                        <label for="localFile" class="cursor-pointer flex flex-col items-center justify-center">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                            <span class="text-sm text-gray-500">Click to browse or drag and drop</span>
+                            <span id="selectedFileName" class="text-sm font-medium text-blue-500 mt-2 hidden"></span>
+                        </label>
+                    </div>
+                    <button id="uploadBtn" class="bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors flex items-center justify-center">
+                        <i class="fas fa-upload mr-2"></i>Upload File
+                    </button>
+                </div>
+                <p class="mt-1 text-sm text-gray-500">Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, mkv, avi, mov</p>
+            </div>
+
+            <!-- Transcription Output Settings -->
+            <div id="outputSettings" class="mb-6 hidden">
+                <label for="outputDir" class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-folder mr-2"></i>Transcription Save Location (Optional)
+                </label>
+                <input type="text" id="outputDir" 
+                    class="w-full p-2 border rounded-md bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Leave empty to use default location">
+                <p class="mt-1 text-sm text-gray-500">If left empty, transcriptions will be saved to the default folder</p>
+            </div>
+
+            <!-- Preview Player -->
+            <div class="mb-6">
+                <div id="previewContainer" class="rounded-lg overflow-hidden shadow-sm hidden">
+                    <div class="bg-gray-800 p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <div id="previewInfo" class="text-white text-sm"></div>
+                            <div class="text-white text-sm">Preview Mode</div>
+                        </div>
+                        <div id="previewFrame" class="w-full aspect-video bg-black"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Media Player (for downloaded content) -->
+            <div class="mb-6">
+                <div id="playerContainer" class="rounded-lg overflow-hidden shadow-sm hidden">
+                    <div class="bg-gray-800 p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <div id="durationInfo" class="text-white text-sm"></div>
+                            <div class="text-white text-sm">Media Player</div>
+                        </div>
+                        <video id="videoPlayer" controls class="w-full" controlsList="nodownload">
+                            <source src="" type="video/mp4">
+                            Your browser does not support the video element.
+                        </video>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Custom Prompt Input -->
+            <div id="promptContainer" class="mb-6 hidden">
+                <label for="customPrompt" class="block text-sm font-medium text-gray-700 mb-2">
+                    <i class="fas fa-magic mr-2"></i>Custom Transcription Prompt (Optional)
+                </label>
+                <textarea id="customPrompt" 
+                    rows="3"
+                    class="w-full p-3 border rounded-md bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-vertical"
+                    placeholder="Add custom instructions to improve transcription quality. Example: 'This is a technical discussion about machine learning with terms like: TensorFlow, PyTorch, backpropagation.'"
+                ></textarea>
+                <p class="mt-1 text-sm text-gray-500">Provide context about speakers, technical terms, or specific formatting needs to enhance accuracy.</p>
+            </div>
+
+            <!-- Transcribe Button -->
+            <div class="mb-6">
+                <button id="transcribeBtn" class="w-full bg-blue-500 text-white py-3 px-4 rounded-md hover:bg-blue-600 transition-colors flex items-center justify-center font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <i class="fas fa-language mr-2"></i>
+                    <span>Transcribe</span>
+                </button>
+            </div>
+
+            <!-- Transcription Result -->
+            <div id="transcriptionResult" class="hidden">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-file-alt mr-2"></i>Transcription
+                    </h2>
+                    <div class="flex gap-2">
+                        <button id="downloadTranscription" class="text-blue-500 hover:text-blue-600 transition-colors">
+                            <i class="fas fa-download mr-1"></i>Download
+                        </button>
+                        <button id="copyTranscription" class="text-blue-500 hover:text-blue-600 transition-colors">
+                            <i class="fas fa-copy mr-1"></i>Copy
+                        </button>
+                    </div>
+                </div>
+                <div id="transcriptionText" class="p-4 bg-gray-50 rounded-md border text-gray-700 whitespace-pre-wrap"></div>
+            </div>
+
+            <!-- Error Alert -->
+            <div id="errorAlert" class="hidden fixed top-4 right-4 max-w-sm bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <strong class="font-bold">Error!</strong>
+                <span id="errorMessage" class="block sm:inline"></span>
+                <button class="absolute top-0 right-0 px-4 py-3" onclick="this.parentElement.classList.add('hidden')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loadingSpinner" class="hidden fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div class="bg-white p-6 rounded-lg flex items-center shadow-xl">
+                    <div class="loading-spinner rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent mr-3"></div>
+                    <div>
+                        <div id="loadingText" class="text-gray-700 font-medium">Processing...</div>
+                        <div id="loadingSubtext" class="text-gray-500 text-sm mt-1"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const videoUrl = document.getElementById('videoUrl');
+        const previewBtn = document.getElementById('previewBtn');
+        const loadBtn = document.getElementById('loadBtn');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const playerContainer = document.getElementById('playerContainer');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewFrame = document.getElementById('previewFrame');
+        const durationInfo = document.getElementById('durationInfo');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const loadingText = document.getElementById('loadingText');
+        const loadingSubtext = document.getElementById('loadingSubtext');
+        const transcribeBtn = document.getElementById('transcribeBtn');
+        const errorAlert = document.getElementById('errorAlert');
+        const errorMessage = document.getElementById('errorMessage');
+        const copyTranscription = document.getElementById('copyTranscription');
+        const promptContainer = document.getElementById('promptContainer');
+        const customPrompt = document.getElementById('customPrompt');
+        
+        // New elements
+        const urlTabBtn = document.getElementById('urlTabBtn');
+        const fileTabBtn = document.getElementById('fileTabBtn');
+        const urlTab = document.getElementById('urlTab');
+        const fileTab = document.getElementById('fileTab');
+        const localFile = document.getElementById('localFile');
+        const selectedFileName = document.getElementById('selectedFileName');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const outputSettings = document.getElementById('outputSettings');
+        const outputDir = document.getElementById('outputDir');
+        const downloadTranscription = document.getElementById('downloadTranscription');
+
+        let currentVideoPath = null;
+        let currentTranscriptionPath = null;
+
+        // Tab switching
+        urlTabBtn.addEventListener('click', function() {
+            urlTabBtn.classList.add('text-blue-500', 'border-b-2', 'border-blue-500');
+            urlTabBtn.classList.remove('text-gray-500');
+            fileTabBtn.classList.remove('text-blue-500', 'border-b-2', 'border-blue-500');
+            fileTabBtn.classList.add('text-gray-500');
+            
+            urlTab.classList.remove('hidden');
+            fileTab.classList.add('hidden');
+        });
+        
+        fileTabBtn.addEventListener('click', function() {
+            fileTabBtn.classList.add('text-blue-500', 'border-b-2', 'border-blue-500');
+            fileTabBtn.classList.remove('text-gray-500');
+            urlTabBtn.classList.remove('text-blue-500', 'border-b-2', 'border-blue-500');
+            urlTabBtn.classList.add('text-gray-500');
+            
+            fileTab.classList.remove('hidden');
+            urlTab.classList.add('hidden');
+        });
+        
+        // File selection handling
+        localFile.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                const file = this.files[0];
+                selectedFileName.textContent = file.name;
+                selectedFileName.classList.remove('hidden');
+            } else {
+                selectedFileName.textContent = '';
+                selectedFileName.classList.add('hidden');
+            }
+        });
+        
+        // Drag and drop functionality
+        const dropZone = document.querySelector('.border-dashed');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropZone.classList.add('border-blue-500', 'bg-blue-50');
+        }
+        
+        function unhighlight() {
+            dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+        }
+        
+        dropZone.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files && files[0]) {
+                localFile.files = files;
+                selectedFileName.textContent = files[0].name;
+                selectedFileName.classList.remove('hidden');
+            }
+        }
+        
+        // File upload handling
+        uploadBtn.addEventListener('click', async function() {
+            if (!localFile.files || !localFile.files[0]) {
+                showError('Please select a file to upload');
+                return;
+            }
+            
+            const file = localFile.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            updateLoadingState(true, 'Uploading file...', 'This may take a few moments');
+            uploadBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/upload-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Store the filename for later use
+                currentVideoPath = data.filename;
+                
+                // Construct the video source URL
+                const encodedPath = data.filename.split('/').map(component => 
+                    encodeURIComponent(component)
+                ).join('/');
+                
+                // Set the video source
+                videoPlayer.src = `/temp_resources/${encodedPath}`;
+                videoPlayer.load();
+                
+                previewContainer.classList.add('hidden');
+                playerContainer.classList.remove('hidden');
+                
+                if (data.duration) {
+                    durationInfo.textContent = `Duration: ${Math.round(data.duration)} seconds`;
+                }
+                
+                document.getElementById('transcriptionResult').classList.add('hidden');
+                document.getElementById('transcriptionText').textContent = '';
+                
+                // Show prompt container and output settings
+                promptContainer.classList.remove('hidden');
+                outputSettings.classList.remove('hidden');
+                
+                transcribeBtn.disabled = false;
+                
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                updateLoadingState(false);
+                uploadBtn.disabled = false;
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('hidden');
+            setTimeout(() => {
+                errorAlert.classList.add('hidden');
+            }, 5000);
+        }
+
+        function updateLoadingState(isLoading, text, subtext = '') {
+            if (isLoading) {
+                loadingText.textContent = text;
+                loadingSubtext.textContent = subtext;
+                loadingSpinner.classList.remove('hidden');
+            } else {
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+        function getLinkedInPostId(url) {
+            console.log('Processing URL:', url);
+            
+            // Extract activity ID from various LinkedIn URL formats
+            const patterns = [
+                // Standard activity pattern
+                /activity-(\d+)/,
+                // Feed update pattern
+                /urn:li:activity:(\d+)/,
+                // UGC post pattern
+                /urn:li:ugcPost:(\d+)/
+            ];
+
+            for (const pattern of patterns) {
+                const match = url.match(pattern);
+                if (match) {
+                    const id = match[1];
+                    console.log('Found LinkedIn post ID:', id);
+                    return id;
+                }
+            }
+            
+            console.log('No matching pattern found for URL');
+            return null;
+        }
+
+        function getDriveFileId(url) {
+            const regExp = /\/file\/d\/([^/]+)/;
+            const match = url.match(regExp);
+            return match ? match[1] : null;
+        }
+        
+        function getYouTubeVideoId(url) {
+            // Extract YouTube video ID from various URL formats
+            let videoId = null;
+            
+            // Regular YouTube URLs (watch?v=VIDEO_ID)
+            const watchRegExp = /(?:\?v=|&v=|youtu\.be\/|\/embed\/|\/v\/|\/e\/|^https:\/\/youtu\.be\/)([^"&?\/ ]{11})/i;
+            const watchMatch = url.match(watchRegExp);
+            
+            if (watchMatch && watchMatch[1]) {
+                videoId = watchMatch[1];
+            }
+            
+            return videoId;
+        }
+        
+        let previewIframe = null;
+
+        function embedLinkedInPost(postId) {
+            console.log('Embedding post with ID:', postId);
+            // Create an iframe for LinkedIn embed
+            previewFrame.innerHTML = `
+                <iframe 
+                    src="https://www.linkedin.com/embed/feed/update/urn:li:activity:${postId}"
+                    width="100%" 
+                    height="100%" 
+                    frameborder="0" 
+                    allowfullscreen
+                    allow="autoplay; encrypted-media"
+                    title="LinkedIn post">
+                </iframe>
+            `;
+            console.log('Embed iframe created');
+            previewIframe = previewFrame.querySelector('iframe');
+        }
+
+        function embedDriveVideo(fileId) {
+            previewFrame.innerHTML = `
+                <iframe 
+                    width="100%" 
+                    height="100%" 
+                    src="https://drive.google.com/file/d/${fileId}/preview"
+                    frameborder="0" 
+                    allow="autoplay">
+                </iframe>
+            `;
+        }
+        
+        function embedYouTubeVideo(videoId) {
+            previewFrame.innerHTML = `
+                <iframe 
+                    width="100%" 
+                    height="100%" 
+                    src="https://www.youtube.com/embed/${videoId}"
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+                </iframe>
+            `;
+        }
+        
+        function stopPreviewVideo() {
+            const previewIframe = previewFrame.querySelector('iframe');
+            if (previewIframe) {
+                // Replace the iframe with itself to stop the video
+                previewIframe.src = previewIframe.src;
+            }
+        }
+
+        previewBtn.addEventListener('click', function() {
+            const url = videoUrl.value.trim();
+            if (!url) {
+                showError('Please enter a valid URL');
+                return;
+            }
+            
+            // Pause the loaded video if it's playing
+            videoPlayer.pause();
+
+            let videoId;
+            if (url.includes('linkedin.com')) {
+                videoId = getLinkedInPostId(url);
+                if (videoId) {
+                    embedLinkedInPost(videoId);
+                    previewContainer.classList.remove('hidden');
+                    playerContainer.classList.add('hidden');
+                    return;
+                }
+            } else if (url.includes('drive.google.com')) {
+                videoId = getDriveFileId(url);
+                if (videoId) {
+                    embedDriveVideo(videoId);
+                    previewContainer.classList.remove('hidden');
+                    playerContainer.classList.add('hidden');
+                    return;
+                }
+            } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                videoId = getYouTubeVideoId(url);
+                if (videoId) {
+                    embedYouTubeVideo(videoId);
+                    previewContainer.classList.remove('hidden');
+                    playerContainer.classList.add('hidden');
+                    return;
+                }
+            }
+            
+            showError('Invalid video URL');
+        });
+
+        loadBtn.addEventListener('click', async function() {
+            const url = videoUrl.value.trim();
+            if (!url) {
+                showError('Please enter a valid URL');
+                return;
+            }
+            
+            // Stop the preview video
+            stopPreviewVideo();
+
+            updateLoadingState(true, 'Downloading video...', 'This may take a few moments');
+            loadBtn.disabled = true;
+            transcribeBtn.disabled = true;
+
+            try {
+                const response = await fetch('/process-url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url }),
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Store the filename for later use
+                currentVideoPath = data.filename;
+                
+                // Construct the video source URL - encode the path components but not the slashes
+                const encodedPath = data.filename.split('/').map(component => 
+                    encodeURIComponent(component)
+                ).join('/');
+                
+                // Set the video source
+                videoPlayer.src = `/temp_resources/${encodedPath}`;
+                videoPlayer.load();
+                previewContainer.classList.add('hidden');
+                playerContainer.classList.remove('hidden');
+                
+                if (data.duration) {
+                    durationInfo.textContent = `Duration: ${Math.round(data.duration)} seconds`;
+                }
+
+                document.getElementById('transcriptionResult').classList.add('hidden');
+                document.getElementById('transcriptionText').textContent = '';
+                
+                // Show prompt container and output settings
+                promptContainer.classList.remove('hidden');
+                outputSettings.classList.remove('hidden');
+                
+                transcribeBtn.disabled = false;
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                updateLoadingState(false);
+                loadBtn.disabled = false;
+            }
+        });
+
+        transcribeBtn.addEventListener('click', async function() {
+            if (!currentVideoPath) {
+                showError('Please load a video first');
+                return;
+            }
+
+            updateLoadingState(true, 'Transcribing...', 'This may take several minutes');
+            this.disabled = true;
+
+            try {
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        file_path: currentVideoPath,
+                        prompt: customPrompt.value.trim() || null,
+                        output_dir: outputDir.value.trim() || null
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                document.getElementById('transcriptionResult').classList.remove('hidden');
+                document.getElementById('transcriptionText').textContent = data.transcription;
+                
+                // Store the transcription path for download
+                currentTranscriptionPath = data.transcription_path;
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                updateLoadingState(false);
+                this.disabled = false;
+            }
+        });
+
+        copyTranscription.addEventListener('click', async function() {
+            const transcriptionText = document.getElementById('transcriptionText').textContent;
+            try {
+                await navigator.clipboard.writeText(transcriptionText);
+                const originalText = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+                setTimeout(() => {
+                    this.innerHTML = originalText;
+                }, 2000);
+            } catch (err) {
+                showError('Failed to copy to clipboard');
+            }
+        });
+        
+        downloadTranscription.addEventListener('click', function() {
+            if (!currentTranscriptionPath) {
+                showError('No transcription available to download');
+                return;
+            }
+            
+            // Create a download link
+            const encodedPath = currentTranscriptionPath.split('/').map(component => 
+                encodeURIComponent(component)
+            ).join('/');
+            
+            const downloadUrl = `/temp_resources/${encodedPath}`;
+            
+            // Create temporary anchor and click it
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = currentTranscriptionPath.split('/').pop();
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        // Auto-resize textarea
+        function autoResizeTextarea() {
+            videoUrl.style.height = 'auto';
+            videoUrl.style.height = (videoUrl.scrollHeight) + 'px';
+        }
+
+        // Initial resize
+        autoResizeTextarea();
+
+        // Add event listeners for auto-resize
+        videoUrl.addEventListener('input', autoResizeTextarea);
+        videoUrl.addEventListener('change', autoResizeTextarea);
+
+        // Clear and resize video URL on focus
+        videoUrl.addEventListener('focus', function() {
+            if (this.value) {
+                this.select();
+            }
+            autoResizeTextarea();
+        });
+
+        // Resize on window resize
+        window.addEventListener('resize', autoResizeTextarea);
+    </script>
+</body>
+</html>

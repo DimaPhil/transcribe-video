@@ -1,0 +1,27 @@
+# This is an example system prompt file for improving transcription quality.
+# Create a file named 'system_prompt.txt' in the same directory as this application
+# to use custom prompts for all transcriptions.
+
+# Examples:
+
+# For technical content:
+This is a technical discussion about artificial intelligence and machine learning.
+The speakers use terms like: neural networks, deep learning, embeddings, transformers, 
+fine-tuning, reinforcement learning, LLMs, and backpropagation.
+
+# For medical content:
+# This is a medical discussion using specialized terminology such as hypertension, 
+# myocardial infarction, atherosclerosis, tachycardia, and idiopathic.
+
+# For multiple speakers:
+# The conversation is between three speakers: John (male, deep voice), 
+# Sarah (female, higher voice), and Alex (male, slight accent).
+
+# For presentations:
+# This is a presentation about quarterly business results. Speaker mentions 
+# percentages, dollar figures, and dates. Please format numbers properly and 
+# include proper punctuation.
+
+# For multilingual content:
+# This is a bilingual conversation in English and Spanish. Please transcribe
+# both languages accurately, keeping each in its original language. 
