@@ -25,6 +25,9 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
    ```bash
    # For macOS
    brew install ffmpeg
+
+   # For Linux
+   sudo apt install -y ffmpeg
    ```
 
 2. Install Python libraries:
