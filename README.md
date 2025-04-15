@@ -21,6 +21,8 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
 
 ## Installation
 
+### Option 1: Standard Installation
+
 1. Install required system dependencies:
    ```bash
    # For macOS
@@ -40,16 +42,34 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
    - Add your OpenAI API key to `.env`
    - If using the Telegram bot, add your Telegram Bot token to `.env`
 
+### Option 2: Docker Installation
+
+1. Make sure Docker and Docker Compose are installed on your system
+
+2. Set up environment variables:
+   - Copy `.env.example` to `.env`
+   - Add your OpenAI API key to `.env`
+   - If using the Telegram bot, add your Telegram Bot token to `.env`
+
+3. Build and start the containers:
+   ```bash
+   docker-compose up -d
+   ```
+
+4. The application will be available at http://localhost
+
 ## Usage
 
 ### Web Interface
 
-Start the web server:
+If using standard installation, start the web server:
 ```bash
 python app.py
 ```
 
-Then visit `http://localhost:3000` in your web browser.
+Then visit `http://localhost:80` in your web browser.
+
+If using Docker, visit `http://localhost` in your web browser.
 
 The web interface allows you to:
 - Upload local media files from your computer
@@ -74,7 +94,11 @@ To use the Telegram bot:
    ```
 4. Start the bot:
    ```bash
+   # For standard installation
    python telegram_bot_server.py
+   
+   # For Docker, run in a separate container
+   docker-compose exec web python telegram_bot_server.py
    ```
 
 ### Customizing Transcription with Prompts
@@ -90,3 +114,5 @@ Examples of effective prompts:
 ### File Storage
 
 By default, all media files are stored in the `temp_resources` directory, and transcriptions are saved to `temp_resources/transcriptions`. You can specify a custom location for transcription files in the web interface.
+
+When using Docker, these directories are persisted as volumes, so your files will remain even if you restart the container.
