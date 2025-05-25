@@ -79,6 +79,12 @@ def upload_file():
     if not allowed_file(file.filename):
         return jsonify({'error': f'Unsupported file format. Allowed formats: {", ".join(ALLOWED_EXTENSIONS)}'}), 400
     
+    # Log file size
+    file.seek(0, 2)  # Seek to end
+    file_size = file.tell()
+    file.seek(0)  # Seek back to beginning
+    print(f"Uploading file: {file.filename}, Size: {file_size / (1024*1024):.2f} MB")
+    
     try:
         # Create a temporary directory to store the uploaded file
         temp_dir = tempfile.mkdtemp(dir=TEMP_DIR)

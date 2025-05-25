@@ -326,6 +326,18 @@
                     body: formData
                 });
                 
+                if (!response.ok) {
+                    if (response.status === 413) {
+                        throw new Error('File too large. Please use a smaller file or upload via URL.');
+                    }
+                    throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server returned an invalid response. This often happens with very large files.');
+                }
+                
                 const data = await response.json();
                 
                 if (data.error) {

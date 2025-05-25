@@ -3,9 +3,10 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (ffmpeg for audio processing)
+# Install system dependencies (ffmpeg for audio processing and curl for healthcheck)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
