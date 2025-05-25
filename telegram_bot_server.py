@@ -103,9 +103,26 @@ class TranscriptionQueue:
         """Process a single transcription task"""
         try:
             # Send initial status
-            asyncio.run(self.bot.send_message(task.chat_id, "Starting transcription..."))
+            status_msg = "🎬 Starting transcription..."
+            if task.is_url:
+                status_msg = "🔗 Processing URL..."
+            asyncio.run(self.bot.send_message(task.chat_id, status_msg))
 
             if task.is_url:
+                # Identify the source
+                source_name = "Unknown"
+                if YouTubeService.is_youtube_url(task.file_path):
+                    source_name = "YouTube"
+                elif GoogleDriveService.is_google_drive_url(task.file_path):
+                    source_name = "Google Drive"
+                elif LinkedInService.is_linkedin_url(task.file_path):
+                    source_name = "LinkedIn"
+                
+                asyncio.run(self.bot.send_message(
+                    task.chat_id, 
+                    f"📥 Downloading from {source_name}..."
+                ))
+                
                 if YouTubeService.is_youtube_url(task.file_path):
                     # Download YouTube video
                     file_path = YouTubeService.download_video(task.file_path)
@@ -120,8 +137,26 @@ class TranscriptionQueue:
                     file_path = LinkedInService.download_video(task.file_path)
                 else:
                     raise ValueError("Unsupported URL type")
+                
+                asyncio.run(self.bot.send_message(
+                    task.chat_id, 
+                    "✅ Download completed!"
+                ))
             else:
                 file_path = task.file_path
+
+            # Get audio duration
+            duration = self.media_processor.get_audio_duration(file_path)
+            duration_str = ""
+            if duration:
+                minutes = int(duration // 60)
+                seconds = int(duration % 60)
+                duration_str = f" (Duration: {minutes}m {seconds}s)"
+            
+            asyncio.run(self.bot.send_message(
+                task.chat_id, 
+                f"🎤 Transcribing audio{duration_str}..."
+            ))
 
             # Perform transcription
             response = self.media_processor.transcribe_audio(file_path, task.prompt)
@@ -132,6 +167,11 @@ class TranscriptionQueue:
                 self.media_processor.cleanup_temp_files(file_path)
 
             if transcription:
+                asyncio.run(self.bot.send_message(
+                    task.chat_id, 
+                    "📝 Processing transcription..."
+                ))
+                
                 # Save transcription to file
                 temp_file = tempfile.NamedTemporaryFile(
                     delete=False,
@@ -142,11 +182,22 @@ class TranscriptionQueue:
                 temp_file.write(transcription)
                 temp_file.close()
 
-                # Send the file
+                # Calculate some stats
+                word_count = len(transcription.split())
+                char_count = len(transcription)
+                
+                # Send the file with stats
+                caption = f"✨ Transcription completed!\n\n"
+                caption += f"📊 Stats:\n"
+                caption += f"• Words: {word_count:,}\n"
+                caption += f"• Characters: {char_count:,}\n"
+                if duration:
+                    caption += f"• Duration: {minutes}m {seconds}s"
+                
                 asyncio.run(self.bot.send_file(
                     task.chat_id,
                     temp_file.name,
-                    "Transcription completed!"
+                    caption
                 ))
 
                 # Cleanup
@@ -154,14 +205,22 @@ class TranscriptionQueue:
             else:
                 asyncio.run(self.bot.send_message(
                     task.chat_id,
-                    "Transcription failed. Please try again."
+                    "❌ Transcription failed. Please try again."
                 ))
 
         except Exception as e:
             logger.error(f"Error processing task: {e}")
+            error_msg = f"❌ Error during transcription:\n{str(e)}"
+            
+            # Add helpful tips for common errors
+            if "file size" in str(e).lower():
+                error_msg += "\n\n💡 Tip: Try using a URL instead of uploading the file directly."
+            elif "unsupported" in str(e).lower():
+                error_msg += "\n\n💡 Tip: Make sure your file is in a supported format (mp3, mp4, wav, etc.)"
+            
             asyncio.run(self.bot.send_message(
                 task.chat_id,
-                f"Error during transcription: {str(e)}"
+                error_msg
             ))
 
 class TranscriptionBot:
@@ -212,16 +271,20 @@ class TranscriptionBot:
             return
 
         await update.message.reply_text(
-            "Welcome to the Transcription Bot!\n\n"
-            "Use /transcribe (or /ts) command with either:\n"
-            "- An audio/video file attachment\n"
-            "- A YouTube URL\n"
-            "- A LinkedIn post URL\n"
-            "- A public Google Drive file URL\n\n"
-            "You can also provide a custom prompt to improve transcription quality with:\n"
-            "/transcribe [URL] --prompt \"Your custom prompt\"\n\n"
-            "Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, mkv, avi, mov\n\n"
-            "I will process your request and send you back the transcription."
+            "🎙️ Welcome to the Transcription Bot!\n\n"
+            "📝 **How to use:**\n"
+            "Send me `/transcribe` (or `/ts`) with:\n"
+            "• 📎 An audio/video file (up to 20MB)\n"
+            "• 🔗 A YouTube URL\n"
+            "• 💼 A LinkedIn post URL\n"
+            "• 📁 A Google Drive file URL\n\n"
+            "💡 **Pro tip:** For larger files, use a link instead of direct upload!\n\n"
+            "🎯 **Custom prompts:**\n"
+            "Improve accuracy with domain-specific prompts:\n"
+            "`/transcribe [URL] --prompt \"Technical discussion about AI\"`\n\n"
+            "📋 **Supported formats:**\n"
+            "mp3, mp4, mpeg, mpga, m4a, wav, webm, mkv, avi, mov\n\n"
+            "✨ I'll transcribe your media and send you a text file with the results!"
         )
 
     async def handle_transcribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -334,6 +397,75 @@ class TranscriptionBot:
         """Handle any document/file sent to the bot"""
         # Redirect to the transcribe command handler
         await self.handle_transcribe_command(update, context)
+    
+    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /status command to show queue status"""
+        if not self.check_whitelist(update.effective_user.id):
+            await update.message.reply_text(
+                "Sorry, you are not authorized to use this bot."
+            )
+            return
+        
+        queue_size = self.queue.queue.qsize()
+        active_tasks = len(self.queue.active_tasks)
+        
+        status_msg = "📊 **Transcription Queue Status**\n\n"
+        
+        if queue_size == 0 and active_tasks == 0:
+            status_msg += "✅ Queue is empty - ready for new tasks!"
+        else:
+            status_msg += f"🔄 Active tasks: {active_tasks}/{self.queue.max_tasks}\n"
+            status_msg += f"⏳ Queued tasks: {queue_size}\n\n"
+            
+            if active_tasks > 0:
+                status_msg += "💭 Currently processing transcriptions..."
+        
+        await update.message.reply_text(status_msg)
+    
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /help command"""
+        if not self.check_whitelist(update.effective_user.id):
+            await update.message.reply_text(
+                "Sorry, you are not authorized to use this bot."
+            )
+            return
+        
+        help_text = """🤖 **Transcription Bot Help**
+
+**Available Commands:**
+• `/start` - Welcome message and quick start guide
+• `/help` - Show this help message
+• `/transcribe` (or `/ts`) - Transcribe audio/video
+• `/status` - Check queue status
+
+**How to Transcribe:**
+1️⃣ **Direct Upload:** Send a file with `/transcribe` or just send the file
+   - Max size: 20MB (Telegram limit)
+   - Formats: mp3, mp4, wav, m4a, webm, mkv, avi, mov
+
+2️⃣ **From URL:** Send `/transcribe [URL]`
+   - YouTube videos
+   - LinkedIn posts
+   - Google Drive files
+   - No size limit! 🎉
+
+**Pro Features:**
+🎯 **Custom Prompts** for better accuracy:
+`/transcribe [URL] --prompt "Medical terminology"`
+
+📊 **Examples:**
+• `/ts https://youtube.com/watch?v=...`
+• `/ts https://drive.google.com/file/d/.../view`
+• Send any audio/video file directly
+
+💡 **Tips:**
+• Use URLs for files larger than 20MB
+• Custom prompts improve technical content accuracy
+• Check `/status` to see queue progress
+
+Need more help? Check the project documentation!"""
+        
+        await update.message.reply_text(help_text)
 
 def main():
     """Start the bot"""
@@ -346,7 +478,9 @@ def main():
     # Create application and add handlers
     application = Application.builder().token(CONFIG['telegram_token']).build()
     application.add_handler(CommandHandler('start', bot.start_command))
+    application.add_handler(CommandHandler('help', bot.help_command))
     application.add_handler(CommandHandler(['transcribe', 'ts'], bot.handle_transcribe_command))
+    application.add_handler(CommandHandler('status', bot.status_command))
 
     # Add handler for documents (files)
     application.add_handler(MessageHandler(

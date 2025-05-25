@@ -1,13 +1,24 @@
 version: '3.8'
 
 services:
-  web:
-    build: .
+  nginx:
+    image: nginx:alpine
     ports:
       - "80:80"
     restart: always
     volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx_upload_temp:/tmp/nginx_upload
+    depends_on:
+      - web
+    
+  web:
+    build: .
+    restart: always
+    volumes:
       - ./temp_resources:/app/temp_resources
+      - ./whitelist.json:/app/whitelist.json:ro
+      - ./system_prompt.txt:/app/system_prompt.txt:ro
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -16,4 +27,22 @@ services:
       interval: 1m
       timeout: 10s
       retries: 3
-      start_period: 30s 
+      start_period: 30s
+  
+  telegram-bot:
+    build: .
+    command: python telegram_bot_server.py
+    restart: always
+    volumes:
+      - ./temp_resources:/app/temp_resources
+      - ./temp_files:/app/temp_files
+      - ./whitelist.json:/app/whitelist.json:ro
+      - ./system_prompt.txt:/app/system_prompt.txt:ro
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    depends_on:
+      - web
+
+volumes:
+  nginx_upload_temp: 

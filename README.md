@@ -51,12 +51,26 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
    - Add your OpenAI API key to `.env`
    - If using the Telegram bot, add your Telegram Bot token to `.env`
 
-3. Build and start the containers:
+3. Configure Telegram bot access (optional):
+   - Copy `whitelist.json.example` to `whitelist.json`
+   - Add authorized Telegram user IDs:
+     ```json
+     {
+         "allowed_users": [
+             123456789,  // Replace with your Telegram user ID
+             987654321   // Add more user IDs as needed
+         ]
+     }
+     ```
+
+4. Build and start the containers:
    ```bash
    docker-compose up -d
    ```
 
-4. The application will be available at http://localhost
+5. The application will be available at:
+   - Web interface: http://localhost
+   - Telegram bot: Running automatically (send /start to your bot)
 
 ## Usage
 
@@ -80,26 +94,25 @@ The web interface allows you to:
 
 ### Telegram Bot
 
-To use the Telegram bot:
+The Telegram bot runs automatically when using Docker. To set it up:
 
-1. Create a Telegram bot through BotFather and get the access token
-2. Add your Telegram Bot token to `.env`
-3. Optionally, create `whitelist.json` to restrict access:
-   ```json
-   {
-       "allowed_users": [
-           123456789, 987654321
-       ]
-   }
-   ```
-4. Start the bot:
-   ```bash
-   # For standard installation
-   python telegram_bot_server.py
-   
-   # For Docker, run in a separate container
-   docker-compose exec web python telegram_bot_server.py
-   ```
+1. Create a Telegram bot through @BotFather and get the access token
+2. Add your Telegram Bot token to `.env` file as `TELEGRAM_BOT_TOKEN=your_token_here`
+3. Configure access by editing `whitelist.json` (see Docker installation step 3)
+4. The bot will start automatically with `docker-compose up -d`
+
+**Bot Commands:**
+- `/start` - Get welcome message and instructions
+- `/help` - Show detailed help and examples
+- `/transcribe` or `/ts` - Transcribe a file or URL
+- `/status` - Check transcription queue status
+
+**Features:**
+- Direct file uploads (up to 20MB via Telegram)
+- URL support for YouTube, LinkedIn, and Google Drive (no size limit!)
+- Custom prompts: `/transcribe [URL] --prompt "Technical AI discussion"`
+- Real-time status updates with progress tracking
+- Queue management for multiple concurrent transcriptions
 
 ### Customizing Transcription with Prompts
 
@@ -116,3 +129,19 @@ Examples of effective prompts:
 By default, all media files are stored in the `temp_resources` directory, and transcriptions are saved to `temp_resources/transcriptions`. You can specify a custom location for transcription files in the web interface.
 
 When using Docker, these directories are persisted as volumes, so your files will remain even if you restart the container.
+
+### Large File Support
+
+The application supports large file uploads:
+
+- **Web Interface**: Up to 5GB file uploads directly through the browser
+- **Telegram Bot**: 
+  - Direct uploads limited to 20MB (Telegram's limit)
+  - For larger files, use URLs from YouTube, Google Drive, or LinkedIn
+- **Docker Setup**: Includes nginx proxy configured for large uploads with proper timeouts
+
+**Tips for large files:**
+1. Use URL-based loading when possible (no size limits)
+2. Ensure stable internet connection for uploads
+3. The transcription will automatically split very large audio files into chunks
+4. For files over 1GB, expect longer upload times

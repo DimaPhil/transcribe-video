@@ -20,7 +20,7 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(TRANSCRIPTION_DIR, exist_ok=True)
 
 # File upload configuration
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload size
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max upload size
 ALLOWED_EXTENSIONS = {'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm', 'mkv', 'avi', 'mov'}
 
 # Get singleton instance of MediaProcessorService
@@ -184,7 +184,7 @@ def transcribe_video():
         
         if not os.path.exists(local_path):
             print(f"Contents of {TEMP_DIR}:")
-            for root, dirs, files in os.walk(TEMP_DIR):
+            for root, _, files in os.walk(TEMP_DIR):
                 for name in files:
                     print(os.path.join(root, name))
             return jsonify({'error': f'File not found: {local_path}'}), 404
