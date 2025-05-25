@@ -145,3 +145,8 @@ The application supports large file uploads:
 2. Ensure stable internet connection for uploads
 3. The transcription will automatically split very large audio files into chunks
 4. For files over 1GB, expect longer upload times
+
+**Troubleshooting large uploads:**
+- If you get a 413 error, restart Docker containers: `docker-compose down && docker-compose up -d`
+- On Docker Desktop, check Docker's resource limits in preferences
+- For files over 100MB, consider uploading to Google Drive/YouTube first, then use the URL

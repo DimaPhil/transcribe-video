@@ -1,22 +1,13 @@
 version: '3.8'
 
+# Development configuration without nginx proxy
+# Use this if you're having issues with large file uploads
+
 services:
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-    restart: always
-    volumes:
-      - ./nginx-full.conf:/etc/nginx/nginx.conf:ro
-      - nginx_upload_temp:/tmp/nginx_upload
-      - ./temp_resources:/app/temp_resources
-    depends_on:
-      - web
-    networks:
-      - transcribe-network
-    
   web:
     build: .
+    ports:
+      - "80:80"  # Direct access to Flask app
     restart: always
     volumes:
       - ./temp_resources:/app/temp_resources
@@ -31,8 +22,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    networks:
-      - transcribe-network
   
   telegram-bot:
     build: .
@@ -48,12 +37,3 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     depends_on:
       - web
-    networks:
-      - transcribe-network
-
-volumes:
-  nginx_upload_temp:
-
-networks:
-  transcribe-network:
-    driver: bridge 
