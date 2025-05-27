@@ -4,7 +4,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8082}:80"
     restart: always
     volumes:
       - ./nginx-full.conf:/etc/nginx/nginx.conf:ro
@@ -26,7 +26,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: ["CMD", "curl", "-f", "http://localhost:8082"]
       interval: 1m
       timeout: 10s
       retries: 3

@@ -89,7 +89,7 @@ If using standard installation, start the web server:
 python app.py
 ```
 
-Then visit `http://localhost:8080` in your web browser.
+Then visit `http://localhost:8082` in your web browser.
 
 If using Docker, visit `http://localhost` in your web browser.
 

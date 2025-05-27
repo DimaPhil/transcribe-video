@@ -24,7 +24,7 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app.py
 
 # Expose port
-EXPOSE 8080
+EXPOSE 8082
 
 # Command to run the application
 CMD ["python", "app.py"] 
