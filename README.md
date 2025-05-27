@@ -7,17 +7,25 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
 - Transcribe video and audio files from various sources:
   - Local files uploaded through the web interface
   - LinkedIn videos
-  - YouTube videos
+  - YouTube videos (with cookie authentication support)
   - Google Drive videos
 - Supports multiple file formats: mp4, mp3, m4a, wav, webm, mkv, avi, mov, etc.
 - Web interface with:
-  - File upload from your computer
+  - File upload from your computer (up to 5GB)
   - URL-based media loading
+  - YouTube cookie authentication for restricted videos
   - Custom prompt support for better transcription quality
   - Configurable transcription save location
   - Download transcriptions directly from the UI
-- Telegram bot for mobile use
+- Telegram bot with:
+  - Large file support (up to 2GB with local API)
+  - YouTube cookie management
+  - Queue status tracking
 - Automatic local saving of all transcriptions
+- Security features:
+  - Encrypted cookie storage
+  - Automatic cookie deletion after 24 hours
+  - Session-based cookie access
 
 ## Installation
 
@@ -81,7 +89,7 @@ If using standard installation, start the web server:
 python app.py
 ```
 
-Then visit `http://localhost:80` in your web browser.
+Then visit `http://localhost:8080` in your web browser.
 
 If using Docker, visit `http://localhost` in your web browser.
 
@@ -99,20 +107,30 @@ The Telegram bot runs automatically when using Docker. To set it up:
 1. Create a Telegram bot through @BotFather and get the access token
 2. Add your Telegram Bot token to `.env` file as `TELEGRAM_BOT_TOKEN=your_token_here`
 3. Configure access by editing `whitelist.json` (see Docker installation step 3)
-4. The bot will start automatically with `docker-compose up -d`
+4. (Optional) For large file support (up to 2GB), add Telegram API credentials:
+   - Get API ID and Hash from https://my.telegram.org/apps
+   - Add to `.env`: `TELEGRAM_API_ID=` and `TELEGRAM_API_HASH=`
+5. The bot will start automatically with `docker-compose up -d`
 
 **Bot Commands:**
 - `/start` - Get welcome message and instructions
 - `/help` - Show detailed help and examples
 - `/transcribe` or `/ts` - Transcribe a file or URL
 - `/status` - Check transcription queue status
+- `/setcookies` - Upload YouTube cookies for restricted videos
+- `/removecookies` - Delete stored cookies
+- `/cancel` - Cancel current operation
 
 **Features:**
-- Direct file uploads (up to 20MB via Telegram)
+- Direct file uploads:
+  - Standard mode: up to 20MB
+  - With local API server: up to 2GB
 - URL support for YouTube, LinkedIn, and Google Drive (no size limit!)
+- YouTube cookie authentication for restricted videos
 - Custom prompts: `/transcribe [URL] --prompt "Technical AI discussion"`
 - Real-time status updates with progress tracking
 - Queue management for multiple concurrent transcriptions
+- Automatic cookie deletion after 24 hours for security
 
 ### Customizing Transcription with Prompts
 
@@ -150,3 +168,47 @@ The application supports large file uploads:
 - If you get a 413 error, restart Docker containers: `docker-compose down && docker-compose up -d`
 - On Docker Desktop, check Docker's resource limits in preferences
 - For files over 100MB, consider uploading to Google Drive/YouTube first, then use the URL
+
+### YouTube Cookie Authentication
+
+Some YouTube videos require authentication (age-restricted, private, or region-locked content). The transcriber supports cookie-based authentication:
+
+**Web Interface:**
+1. When entering a YouTube URL, a cookie upload section will appear
+2. Export cookies using browser extensions like "Get cookies.txt" or "cookies.txt"
+3. Upload the cookies.txt file
+4. The cookies will be used for that download session only
+
+**Telegram Bot:**
+1. Use `/setcookies` command
+2. Follow the instructions to export your YouTube cookies
+3. Send the cookies.txt file to the bot
+4. Cookies are stored securely and auto-deleted after 24 hours
+5. Use `/removecookies` to manually delete them
+
+**Security Notes:**
+- Cookies are stored in encrypted form with random filenames
+- Web interface uses session-based storage (expires on browser close)
+- Telegram bot deletes cookies after 24 hours automatically
+- Never share your cookies file with others
+- Only use cookies from your own YouTube account
+
+## Advanced Configuration
+
+### Environment Variables
+
+The following environment variables can be configured in your `.env` file:
+
+**Required:**
+- `OPENAI_API_KEY` - Your OpenAI API key for transcription
+- `TELEGRAM_BOT_TOKEN` - Your Telegram bot token (if using Telegram bot)
+
+**Optional for Large File Support:**
+- `TELEGRAM_API_ID` - Telegram API ID from https://my.telegram.org/apps
+- `TELEGRAM_API_HASH` - Telegram API Hash from https://my.telegram.org/apps
+
+**Advanced Path Configuration (rarely needed):**
+- `TELEGRAM_API_DATA_DIR` - Path where telegram-bot-api stores files (default: `/var/lib/telegram-bot-api`)
+- `TELEGRAM_API_MOUNT_PATH` - Mount path in telegram-bot container (default: `/telegram-bot-api-files`)
+
+These path variables allow you to customize the file storage locations if needed, making the deployment more flexible for different environments.

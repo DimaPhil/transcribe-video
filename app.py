@@ -1,7 +1,9 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session
 import os
 import shutil
 import datetime
+import uuid
+import hashlib
 from werkzeug.utils import secure_filename
 from linkedin_service import LinkedInService
 from google_drive_service import GoogleDriveService
@@ -14,10 +16,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
 TEMP_DIR = 'temp_resources'
 TRANSCRIPTION_DIR = os.path.join(TEMP_DIR, 'transcriptions')
+COOKIES_DIR = os.path.join(TEMP_DIR, '.cookies')  # Hidden directory for security
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(TRANSCRIPTION_DIR, exist_ok=True)
+os.makedirs(COOKIES_DIR, exist_ok=True)
 
 # File upload configuration
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max upload size
@@ -113,11 +118,55 @@ def upload_file():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/upload-youtube-cookies', methods=['POST'])
+def upload_youtube_cookies():
+    """Securely handle YouTube cookies upload"""
+    if 'cookies' not in request.files:
+        return jsonify({'error': 'No cookies file provided'}), 400
+    
+    cookies_file = request.files['cookies']
+    if cookies_file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    try:
+        # Generate a unique ID for this cookie file
+        cookies_id = str(uuid.uuid4())
+        
+        # Hash the cookies ID for the filename (extra security)
+        filename_hash = hashlib.sha256(cookies_id.encode()).hexdigest()[:16]
+        cookies_path = os.path.join(COOKIES_DIR, f"{filename_hash}.txt")
+        
+        # Save the cookies file
+        cookies_file.save(cookies_path)
+        
+        # Store the mapping in session (will expire)
+        if 'cookies_map' not in session:
+            session['cookies_map'] = {}
+        session['cookies_map'][cookies_id] = cookies_path
+        session.permanent = False  # Session expires when browser closes
+        
+        return jsonify({
+            'success': True,
+            'cookies_id': cookies_id
+        })
+    except Exception as e:
+        print(f"Error uploading cookies: {str(e)}")
+        return jsonify({'error': 'Failed to upload cookies'}), 500
+
+
 @app.route('/process-url', methods=['POST'])
 def process_url():
     url = request.json.get('url')
+    cookies_id = request.json.get('cookies_id')
+    
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
+    
+    cookies_path = None
+    if cookies_id and 'cookies_map' in session:
+        cookies_path = session['cookies_map'].get(cookies_id)
+        if cookies_path and not os.path.exists(cookies_path):
+            cookies_path = None
     
     try:
         temp_dir = tempfile.mkdtemp(dir=TEMP_DIR)
@@ -127,7 +176,7 @@ def process_url():
         elif GoogleDriveService.is_google_drive_url(url):
             video_path = GoogleDriveService.download_file(url)
         elif YouTubeService.is_youtube_url(url):
-            video_path = YouTubeService.download_video(url)
+            video_path = YouTubeService.download_video(url, cookies_path)
         else:
             return jsonify({'error': 'Unsupported URL format'}), 400
 
@@ -170,6 +219,13 @@ def process_url():
         print(f"Error processing URL: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+    finally:
+        # Clean up cookies file if used
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.unlink(cookies_path)
+            except Exception as e:
+                print(f"Warning: Could not delete cookies file: {e}")
 
 
 @app.route('/transcribe', methods=['POST'])
@@ -235,4 +291,4 @@ def serve_temp_file(filename):
 
 
 if __name__ == '__main__':
-    app.run(port=80, host='0.0.0.0', debug=True)
+    app.run(port=8080, host='0.0.0.0', debug=True)

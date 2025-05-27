@@ -4,7 +4,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      - "8080:80"
     restart: always
     volumes:
       - ./nginx-full.conf:/etc/nginx/nginx.conf:ro
@@ -26,11 +26,33 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 1m
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - transcribe-network
+  
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    restart: always
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_LOCAL=1
+      - TELEGRAM_API_DATA_DIR=${TELEGRAM_API_DATA_DIR:-/var/lib/telegram-bot-api}
+    volumes:
+      - telegram_bot_api_data:${TELEGRAM_API_DATA_DIR:-/var/lib/telegram-bot-api}
+      - ./temp_files:/tmp/telegram-bot-api
+    ports:
+      - "8081:8081"
+    command: 
+      - "--api-id=${TELEGRAM_API_ID}"
+      - "--api-hash=${TELEGRAM_API_HASH}"
+      - "--local"
+      - "--dir=${TELEGRAM_API_DATA_DIR:-/var/lib/telegram-bot-api}"
+      - "--temp-dir=/tmp/telegram-bot-api"
     networks:
       - transcribe-network
   
@@ -43,16 +65,22 @@ services:
       - ./temp_files:/app/temp_files
       - ./whitelist.json:/app/whitelist.json:ro
       - ./system_prompt.txt:/app/system_prompt.txt:ro
+      - telegram_bot_api_data:${TELEGRAM_API_MOUNT_PATH:-/telegram-bot-api-files}:ro
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_API_URL=http://telegram-bot-api:8081/bot
+      - TELEGRAM_API_DATA_DIR=${TELEGRAM_API_DATA_DIR:-/var/lib/telegram-bot-api}
+      - TELEGRAM_API_MOUNT_PATH=${TELEGRAM_API_MOUNT_PATH:-/telegram-bot-api-files}
     depends_on:
       - web
+      - telegram-bot-api
     networks:
       - transcribe-network
 
 volumes:
   nginx_upload_temp:
+  telegram_bot_api_data:
 
 networks:
   transcribe-network:

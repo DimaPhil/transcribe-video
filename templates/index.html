@@ -74,6 +74,39 @@
                     </button>
                 </div>
                 <p class="mt-1 text-sm text-gray-500">Supported formats: LinkedIn videos/posts, YouTube videos, and Google Drive video files</p>
+                
+                <!-- YouTube Cookies Section (shown only when YouTube URL is detected) -->
+                <div id="youtubeCookiesSection" class="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md hidden">
+                    <div class="flex items-start mb-3">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 mt-1 mr-2"></i>
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-800">YouTube Authentication (Optional)</h3>
+                            <p class="text-xs text-gray-600 mt-1">
+                                Some YouTube videos require authentication. You can provide a cookies.txt file exported from your browser.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="youtubeCookies" class="block text-sm font-medium text-gray-700 mb-1">
+                            <i class="fas fa-cookie-bite mr-1"></i>Upload Cookies File
+                        </label>
+                        <input type="file" id="youtubeCookies" accept=".txt" class="text-sm">
+                        <p class="text-xs text-gray-500 mt-1">Use browser extensions like "Get cookies.txt" to export your YouTube cookies</p>
+                    </div>
+                    
+                    <div class="bg-red-50 border border-red-200 rounded p-3 text-xs">
+                        <p class="text-red-700 font-semibold mb-1">
+                            <i class="fas fa-shield-alt mr-1"></i>Security Warning:
+                        </p>
+                        <ul class="text-red-600 space-y-1 ml-4 list-disc">
+                            <li>Cookies contain your YouTube session data</li>
+                            <li>They will be stored temporarily and deleted after use</li>
+                            <li>Only upload cookies from your own YouTube account</li>
+                            <li>Never share your cookies file with others</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
 
             <!-- File Upload Tab -->
@@ -228,9 +261,12 @@
         const outputSettings = document.getElementById('outputSettings');
         const outputDir = document.getElementById('outputDir');
         const downloadTranscription = document.getElementById('downloadTranscription');
+        const youtubeCookiesSection = document.getElementById('youtubeCookiesSection');
+        const youtubeCookies = document.getElementById('youtubeCookies');
 
         let currentVideoPath = null;
         let currentTranscriptionPath = null;
+        let youtubeCookiesFile = null;
 
         // Tab switching
         urlTabBtn.addEventListener('click', function() {
@@ -553,12 +589,35 @@
             transcribeBtn.disabled = true;
 
             try {
+                let requestBody = { url: url };
+                
+                // If it's a YouTube URL and cookies are provided, upload them first
+                if ((url.includes('youtube.com') || url.includes('youtu.be')) && youtubeCookiesFile) {
+                    updateLoadingState(true, 'Uploading cookies...', 'Securing your authentication');
+                    
+                    const cookieFormData = new FormData();
+                    cookieFormData.append('cookies', youtubeCookiesFile);
+                    
+                    const cookieResponse = await fetch('/upload-youtube-cookies', {
+                        method: 'POST',
+                        body: cookieFormData
+                    });
+                    
+                    const cookieData = await cookieResponse.json();
+                    if (cookieData.error) {
+                        throw new Error(cookieData.error);
+                    }
+                    
+                    requestBody.cookies_id = cookieData.cookies_id;
+                    updateLoadingState(true, 'Downloading video...', 'Using authenticated session');
+                }
+
                 const response = await fetch('/process-url', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ url: url }),
+                    body: JSON.stringify(requestBody),
                 });
 
                 const data = await response.json();
@@ -690,6 +749,25 @@
         // Add event listeners for auto-resize
         videoUrl.addEventListener('input', autoResizeTextarea);
         videoUrl.addEventListener('change', autoResizeTextarea);
+        
+        // YouTube URL detection
+        videoUrl.addEventListener('input', function() {
+            const url = videoUrl.value.trim();
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                youtubeCookiesSection.classList.remove('hidden');
+            } else {
+                youtubeCookiesSection.classList.add('hidden');
+            }
+        });
+        
+        // Handle YouTube cookies file selection
+        youtubeCookies.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                youtubeCookiesFile = this.files[0];
+            } else {
+                youtubeCookiesFile = null;
+            }
+        });
 
         // Clear and resize video URL on focus
         videoUrl.addEventListener('focus', function() {

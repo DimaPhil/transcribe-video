@@ -7,7 +7,7 @@ services:
   web:
     build: .
     ports:
-      - "80:80"  # Direct access to Flask app
+      - "8080:8080"  # Direct access to Flask app
     restart: always
     volumes:
       - ./temp_resources:/app/temp_resources
@@ -17,7 +17,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 1m
       timeout: 10s
       retries: 3

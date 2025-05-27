@@ -1,4 +1,5 @@
 temp_resources/
+temp_files/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

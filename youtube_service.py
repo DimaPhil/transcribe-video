@@ -40,9 +40,11 @@ class YouTubeService:
             return None
 
     @staticmethod
-    def download_video(url):
+    def download_video(url, cookies_path=None):
         """Download YouTube video using yt-dlp and return path to downloaded file"""
         print("Downloading YouTube video...")
+        if cookies_path:
+            print(f"Using cookies for authentication")
         
         temp_dir = tempfile.mkdtemp(dir='temp_resources')
         output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
@@ -62,6 +64,11 @@ class YouTubeService:
                 }],
             }
             
+            # Add cookies if provided
+            if cookies_path and os.path.exists(cookies_path):
+                ydl_opts['cookiefile'] = cookies_path
+                print(f"Added cookies file to yt-dlp options")
+            
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
             
@@ -73,4 +80,6 @@ class YouTubeService:
             raise Exception("No file downloaded")
         except Exception as e:
             print(f"Error downloading video: {e}")
+            if 'Sign in to confirm' in str(e) or 'age-restricted' in str(e):
+                raise ValueError(f"This video requires authentication. Please provide a cookies.txt file exported from your browser.")
             raise ValueError(f"Failed to download YouTube video: {str(e)}") 
