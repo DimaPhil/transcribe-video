@@ -929,8 +929,8 @@ class TranscriptionBot:
 • `/summary` - Summarize last transcription
 • `/summary --lang ru` - Summarize in Russian
 • `/summary Your text here` - Summarize provided text
-• `/summary Refine with more focus on X` - Refine previous summary
 • Attach .txt file after `/summary` to summarize it
+• After summary: Just send feedback to refine it!
 
 💡 **Tips:**
 • Use URLs for files larger than {max_size}
@@ -1094,7 +1094,7 @@ Need more help? Check the project documentation!"""
                 caption += f"• Words: {word_count:,}\n"
                 caption += f"• Characters: {char_count:,}\n"
                 caption += f"• Language: {'Russian' if language == 'ru' else 'English'}\n\n"
-                caption += f"💡 To refine, use: `/summary Your feedback here...`"
+                caption += f"💡 To refine, just send your feedback as a regular message!"
                 
                 # Send the file
                 await context.bot.send_document(
@@ -1190,6 +1190,74 @@ Need more help? Check the project documentation!"""
             )
         finally:
             context.user_data['expecting_summary_file'] = False
+    
+    async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle plain text messages for summary refinement"""
+        if not self.check_whitelist(update.effective_user.id):
+            await update.message.reply_text(
+                "Sorry, you are not authorized to use this bot."
+            )
+            return
+        
+        user_id = update.effective_user.id
+        message_text = update.message.text.strip()
+        
+        # Check if user has a recent summary that can be refined
+        if user_id not in self.user_summaries or user_id not in self.user_transcriptions:
+            # No context for summarization, ignore the message
+            return
+        
+        # Analyze if this is likely a refinement request
+        if not self._is_refinement_request(message_text):
+            # Message doesn't seem to be about summarization, ignore
+            return
+        
+        # Process as refinement request
+        await self._process_summarization(
+            update,
+            context,
+            self.user_transcriptions[user_id],
+            language=self.user_summaries[user_id].get('language', 'en'),
+            custom_prompt=message_text,  # Use the message as feedback
+            is_refinement=True
+        )
+    
+    def _is_refinement_request(self, text: str) -> bool:
+        """Analyze if the text is likely a request to refine the summary"""
+        # Convert to lowercase for analysis
+        text_lower = text.lower()
+        
+        # Check for common refinement indicators
+        refinement_keywords = [
+            'adjust', 'change', 'modify', 'update', 'refine', 'improve',
+            'focus', 'add', 'remove', 'include', 'exclude', 'more', 'less',
+            'detail', 'brief', 'expand', 'shorten', 'clarify', 'emphasize',
+            'rephrase', 'rewrite', 'redo', 'try again', 'instead',
+            'summary', 'summarize', 'enrich', 'redo', 'rewrite',
+            'измени', 'изменить', 'добавь', 'добавить', 'убери', 'убрать', 
+            'поправь', 'поправить', 'уточни', 'уточнить', 'перепиши', 'переписать',
+            'улучши', 'улучшить', 'упрости', 'упростить', 'уменьши', 'уменьшить',
+            'увеличь', 'увеличить', 'поменяй', 'поменять', 'убери', 'убрать',
+            'переведи', 'перевести', 'перепиши', 'переписать', 'переделать', 'переделать',
+            'подробнее', 'короче', 'переделать', 'уточнить', 'лучше', 'плохо', 'не подходит', 'не устраивает',
+        ]
+        
+        # Check if any refinement keyword is present
+        has_refinement_keyword = any(keyword in text_lower for keyword in refinement_keywords)
+        
+        # Also check for imperative sentences (often start with verbs)
+        imperative_starters = [
+            'make', 'give', 'show', 'provide', 'explain', 'describe',
+            'list', 'highlight', 'mention', 'discuss', 'analyze',
+            'сделай', 'дай', 'покажи', 'опиши', 'объясни'
+        ]
+        starts_with_imperative = any(text_lower.startswith(starter) for starter in imperative_starters)
+        
+        # Check message length - very short messages are often not refinements
+        is_long_enough = len(text.split()) > 3
+        
+        # Message is likely a refinement if it has keywords, starts imperatively, or is reasonably long
+        return (has_refinement_keyword or starts_with_imperative) and is_long_enough
 
 def main():
     """Start the bot"""
@@ -1252,7 +1320,11 @@ def main():
         bot.handle_media
     ))
     
-    # Remove catch-all for now to let proper handlers work
+    # Add handler for text messages (for summary refinement)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        bot.handle_text_message
+    ))
 
     # Start the bot
     try:

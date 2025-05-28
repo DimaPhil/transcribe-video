@@ -160,7 +160,8 @@ The application includes advanced summarization capabilities powered by Claude A
   - `/summary` - Summarize the last transcription
   - `/summary Your text here` - Summarize provided text
   - `/summary` + attach .txt file - Summarize file contents
-- **Iterative Refinement**: Send feedback to refine the summary
+- **Natural Refinement**: After receiving a summary, just send your feedback as a regular message!
+- **Intent Detection**: The bot intelligently detects when you want to refine a summary
 - **Language Selection**: `/summary --lang ru` for Russian summaries
 - **File + Text Output**: Receive summaries as both files and text (when size permits)
 
@@ -175,8 +176,10 @@ The application includes advanced summarization capabilities powered by Claude A
 # Summarize with custom focus
 /summary Focus on technical details and code examples
 
-# Refine previous summary
-/summary Please add more details about the conclusions
+# After receiving a summary, refine naturally:
+"Make it shorter and focus on action items"
+"Add more details about the technical implementation"
+"Please include the timeline discussed"
 ```
 
 **Configuration:**
