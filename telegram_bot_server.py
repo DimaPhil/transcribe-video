@@ -964,7 +964,7 @@ Need more help? Check the project documentation!"""
         
         # Extract parameters from the command
         custom_prompt = None
-        language = 'en'  # Default language
+        language = 'ru'  # Default language
         
         # Parse command arguments
         if context.args:
@@ -1033,7 +1033,7 @@ Need more help? Check the project documentation!"""
         )
     
     async def _process_summarization(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
-                                   transcription_text: str, language: str = 'en', 
+                                   transcription_text: str, language: str = 'ru', 
                                    custom_prompt: Optional[str] = None,
                                    is_refinement: bool = False):
         """Process the summarization request"""

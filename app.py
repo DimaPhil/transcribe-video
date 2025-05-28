@@ -282,7 +282,7 @@ def summarize_transcription():
     """Summarize a transcription using Claude API"""
     try:
         transcription = request.json.get('transcription')
-        language = request.json.get('language', 'en')
+        language = request.json.get('language', 'ru')
         custom_prompt = request.json.get('custom_prompt')
         
         if not transcription:
