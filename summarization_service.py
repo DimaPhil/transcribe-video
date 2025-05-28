@@ -69,7 +69,7 @@ class SummarizationService:
     async def summarize(
         self,
         transcription: str,
-        language: str = 'en',
+        language: str = 'ru',
         custom_prompt: Optional[str] = None,
         previous_summary: Optional[str] = None,
         feedback: Optional[str] = None
