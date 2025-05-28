@@ -1,8 +1,14 @@
 import os
 import logging
 from typing import Dict, Optional, List
-from anthropic import Anthropic
 from datetime import datetime
+
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    Anthropic = None
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +17,13 @@ class SummarizationService:
     
     def __init__(self):
         self.api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not self.api_key:
+        self.client = None
+        
+        if not ANTHROPIC_AVAILABLE:
+            logger.warning("Anthropic module not installed. Summarization will not be available.")
+            logger.warning("Run: pip install anthropic>=0.39.0")
+        elif not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not set, summarization will be unavailable")
-            self.client = None
         else:
             self.client = Anthropic(api_key=self.api_key)
         
@@ -75,37 +85,43 @@ class SummarizationService:
             feedback: User feedback for summary refinement
             
         Returns:
-            Dict with 'summary' and 'metadata'
+            Dict with 'success', 'summary' and optional 'error'
         """
-        if not self.is_available():
-            raise Exception("Summarization service not available. Please set ANTHROPIC_API_KEY")
-        
-        if language not in self.system_prompts:
-            raise ValueError(f"Unsupported language: {language}. Supported: {self.get_supported_languages()}")
-        
-        # Build the system prompt
-        system_prompt = self.system_prompts[language]
-        
-        # Add glossary if available
-        if language in self.glossaries:
-            system_prompt += f"\n\nGLOSSARY:\n{self.glossaries[language]}"
-        
-        # Build the user prompt
-        user_prompt_parts = []
-        
-        if previous_summary and feedback:
-            # Refinement mode
-            user_prompt_parts.append(f"Previous summary:\n{previous_summary}\n")
-            user_prompt_parts.append(f"User feedback:\n{feedback}\n")
-            user_prompt_parts.append("Please refine the summary based on the feedback while maintaining accuracy to the original transcription.\n")
-        
-        if custom_prompt:
-            user_prompt_parts.append(f"Additional instructions:\n{custom_prompt}\n")
-        
-        user_prompt_parts.append(f"Transcription to summarize:\n{transcription}")
-        user_prompt = "\n".join(user_prompt_parts)
-        
         try:
+            if not self.is_available():
+                return {
+                    'success': False,
+                    'error': "Summarization service not available. Please set ANTHROPIC_API_KEY"
+                }
+            
+            if language not in self.system_prompts:
+                return {
+                    'success': False,
+                    'error': f"Unsupported language: {language}. Supported: {self.get_supported_languages()}"
+                }
+            
+            # Build the system prompt
+            system_prompt = self.system_prompts[language]
+            
+            # Add glossary if available
+            if language in self.glossaries:
+                system_prompt += f"\n\nGLOSSARY:\n{self.glossaries[language]}"
+            
+            # Build the user prompt
+            user_prompt_parts = []
+            
+            if previous_summary and feedback:
+                # Refinement mode
+                user_prompt_parts.append(f"Previous summary:\n{previous_summary}\n")
+                user_prompt_parts.append(f"User feedback:\n{feedback}\n")
+                user_prompt_parts.append("Please refine the summary based on the feedback while maintaining accuracy to the original transcription.\n")
+            
+            if custom_prompt:
+                user_prompt_parts.append(f"Additional instructions:\n{custom_prompt}\n")
+            
+            user_prompt_parts.append(f"Transcription to summarize:\n{transcription}")
+            user_prompt = "\n".join(user_prompt_parts)
+            
             # Call Claude API
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -120,10 +136,11 @@ class SummarizationService:
             summary = response.content[0].text
             
             return {
+                'success': True,
                 'summary': summary,
                 'metadata': {
                     'language': language,
-                    'timestamp': datetime.utcnow().isoformat(),
+                    'timestamp': datetime.now(datetime.timezone.utc).isoformat(),
                     'model': response.model,
                     'custom_prompt_used': bool(custom_prompt),
                     'is_refinement': bool(previous_summary and feedback)
@@ -131,8 +148,11 @@ class SummarizationService:
             }
             
         except Exception as e:
-            logger.error(f"Error calling Claude API: {str(e)}")
-            raise Exception(f"Failed to generate summary: {str(e)}")
+            logger.error(f"Error in summarization: {str(e)}")
+            return {
+                'success': False,
+                'error': f"Failed to generate summary: {str(e)}"
+            }
     
     def save_summary(self, summary: str, original_filename: str, language: str, output_dir: str = None) -> str:
         """Save summary to file and return the path"""
