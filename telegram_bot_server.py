@@ -1269,6 +1269,7 @@ def main():
     
     
     # Create bot instance
+    # Create bot instance
     bot = TranscriptionBot()
     logger.info(f"Whitelist loaded with {len(bot.whitelist)} users")
     

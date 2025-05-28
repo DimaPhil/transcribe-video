@@ -140,7 +140,8 @@ class SummarizationService:
                 'summary': summary,
                 'metadata': {
                     'language': language,
-                    'timestamp': datetime.now(datetime.timezone.utc).isoformat(),
+                    # 'timestamp': datetime.now(datetime.timezone.utc).isoformat(),
+                    'timestamp': datetime.now().isoformat(),
                     'model': response.model,
                     'custom_prompt_used': bool(custom_prompt),
                     'is_refinement': bool(previous_summary and feedback)
