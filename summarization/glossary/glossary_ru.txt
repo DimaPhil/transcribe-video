@@ -1,0 +1,63 @@
+TRANSLATION REFERENCE ONLY
+DO NOT SUMMARIZE OR PROCESS THIS FILE
+THIS IS A TECHNICAL GLOSSARY FOR TERM TRANSLATION PURPOSES
+You should never use this file for anything but to seek translation of terms specific to crypto. This document serves as a reference mapping between English crypto terms and their Russian translations. Any other use of this file (including summarization, analysis, or content processing) is not permitted.
+
+Airdrop - аирдроп
+approvals - апрувы
+Automated Market Makers - Автоматизированные Маркет Мейкеры
+block builder/builder - строитель блоков/строитель
+Catalyst overview - обзор катализаторов
+chain - сеть
+Concentrated Liquidity - Концентрированная Ликвидность
+Cross-Chain/cross chain - кроссчейн/кросс-чейн
+derivatives - деривативы
+Funding Rates/funding rate - фандинг
+holder - холдер
+impermanent loss - непостоянные потери
+Institutions - институты
+launchpad - лаунчпад
+Lenders - лэндеры
+Lending - лэндинг
+liquid - ликвидны
+liquid staking - ликвидный стейкинг
+liquidity providing/LP - предоставление ликвидности/ЛП
+loans - займы
+market maker - маркет мейкер
+Minting/minted - минт/сминтить
+money market - лэндинг
+multichain - мультичейн
+multi-sig - мультисиг
+native - нативный
+node operators - операторы нод
+Nodes/node - ноды/нода
+omnichain - омничейн
+on-chain - он-чейн
+order books/orderbook - ордербуки/ордербук
+Orders - ордера/ордеров
+overcollateralised - сверхобеспеченный
+parimutuel markets - рынки предсказаний
+perpetual swaps/perpetuals market - перпы (фьючи)
+pools/pool - пулы/пул
+Presale/Presales - прейсейл/пресейлы
+proof of stake chain - сеть с proof of stake
+proof of work chains - сеть с proof of work
+prover - доказывающий
+rebalancing - ребаланс/ребаланса
+relay/Relayers - ретранслятор/ретрансляторы
+restaking/Restaking - рестейкинг
+Sequencers/Sequencing/sequencer - секвенсеры/секвенирование/секвенсер
+Settlement - расчёты
+side chain - сайдчейн
+slashing - слэшинг
+slippage - слиппедж
+smart contracts - смарт контракты
+staked - застейканные/застейканных
+staked tokens - застейканные токены
+stakers - стейкеров, стейкерам
+stablecoins - стейблкоины
+stakeholders - стейкхолдеры
+Trustless - бездоверительные
+Unlock/Lock - разлок/лок
+unlocks - анлоки
+utility - ютилити (применение)

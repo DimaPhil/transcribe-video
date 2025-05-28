@@ -6,3 +6,4 @@ gdown>=5.2.0
 pydub>=0.25.1
 yt-dlp>=2023.11.14
 flask>=2.0.0
+anthropic>=0.39.0

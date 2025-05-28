@@ -9,6 +9,11 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
   - LinkedIn videos
   - YouTube videos (with cookie authentication support)
   - Google Drive videos
+- AI-powered summarization of transcriptions:
+  - Support for multiple languages (English, Russian)
+  - Custom prompt support for focused summaries
+  - Iterative refinement based on feedback
+  - Glossary support for domain-specific terms
 - Supports multiple file formats: mp4, mp3, m4a, wav, webm, mkv, avi, mov, etc.
 - Web interface with:
   - File upload from your computer (up to 5GB)
@@ -17,10 +22,15 @@ A tool for transcribing video and audio files using OpenAI's GPT-4o Transcribe A
   - Custom prompt support for better transcription quality
   - Configurable transcription save location
   - Download transcriptions directly from the UI
+  - Collapsible transcription display
+  - One-click summarization with language selection
+  - Download summaries as text files
 - Telegram bot with:
   - Large file support (up to 2GB with local API)
   - YouTube cookie management
   - Queue status tracking
+  - Smart summarization with context tracking
+  - Iterative summary refinement
 - Automatic local saving of all transcriptions
 - Security features:
   - Encrypted cookie storage
@@ -116,6 +126,7 @@ The Telegram bot runs automatically when using Docker. To set it up:
 - `/start` - Get welcome message and instructions
 - `/help` - Show detailed help and examples
 - `/transcribe` or `/ts` - Transcribe a file or URL
+- `/summary` - Summarize transcriptions with AI
 - `/status` - Check transcription queue status
 - `/setcookies` - Upload YouTube cookies for restricted videos
 - `/removecookies` - Delete stored cookies
@@ -131,6 +142,47 @@ The Telegram bot runs automatically when using Docker. To set it up:
 - Real-time status updates with progress tracking
 - Queue management for multiple concurrent transcriptions
 - Automatic cookie deletion after 24 hours for security
+
+### AI-Powered Summarization
+
+The application includes advanced summarization capabilities powered by Claude AI, allowing you to quickly generate concise summaries of your transcriptions.
+
+**Web Interface Features:**
+- **Collapsible Transcription Display**: Long transcriptions show a preview with a "Read more" button
+- **One-Click Summarization**: Click "Summarize" after transcription completes
+- **Language Support**: Choose between English and Russian summaries
+- **Custom Instructions**: Add specific guidance for the summary (e.g., "Focus on action items")
+- **Download Options**: Save summaries as text files or copy to clipboard
+
+**Telegram Bot Features:**
+- **Smart Context Tracking**: Automatically summarizes your last transcription
+- **Multiple Input Methods**:
+  - `/summary` - Summarize the last transcription
+  - `/summary Your text here` - Summarize provided text
+  - `/summary` + attach .txt file - Summarize file contents
+- **Iterative Refinement**: Send feedback to refine the summary
+- **Language Selection**: `/summary --lang ru` for Russian summaries
+- **File + Text Output**: Receive summaries as both files and text (when size permits)
+
+**Summarization Examples:**
+```bash
+# Summarize last transcription
+/summary
+
+# Summarize in Russian
+/summary --lang ru
+
+# Summarize with custom focus
+/summary Focus on technical details and code examples
+
+# Refine previous summary
+/summary Please add more details about the conclusions
+```
+
+**Configuration:**
+1. Add your Anthropic API key to `.env`: `ANTHROPIC_API_KEY=your_key_here`
+2. System prompts are located in `summarization/` directory
+3. Add domain-specific glossaries in `summarization/glossary/`
 
 ### Customizing Transcription with Prompts
 
@@ -201,6 +253,7 @@ The following environment variables can be configured in your `.env` file:
 
 **Required:**
 - `OPENAI_API_KEY` - Your OpenAI API key for transcription
+- `ANTHROPIC_API_KEY` - Your Anthropic API key for summarization (Claude)
 - `TELEGRAM_BOT_TOKEN` - Your Telegram bot token (if using Telegram bot)
 
 **Optional for Large File Support:**

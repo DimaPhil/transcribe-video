@@ -9,8 +9,10 @@ from linkedin_service import LinkedInService
 from google_drive_service import GoogleDriveService
 from youtube_service import YouTubeService
 from transcriber import get_media_processor
+from summarization_service import get_summarization_service
 import tempfile
 from dotenv import load_dotenv
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -28,8 +30,9 @@ os.makedirs(COOKIES_DIR, exist_ok=True)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024  # 5GB max upload size
 ALLOWED_EXTENSIONS = {'mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm', 'mkv', 'avi', 'mov'}
 
-# Get singleton instance of MediaProcessorService
+# Get singleton instances of services
 media_processor = get_media_processor()
+summarization_service = get_summarization_service()
 
 
 def allowed_file(filename):
@@ -270,6 +273,58 @@ def transcribe_video():
     except Exception as e:
         import traceback
         print(f"Error during transcription: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/summarize', methods=['POST'])
+def summarize_transcription():
+    """Summarize a transcription using Claude API"""
+    try:
+        transcription = request.json.get('transcription')
+        language = request.json.get('language', 'en')
+        custom_prompt = request.json.get('custom_prompt')
+        
+        if not transcription:
+            return jsonify({'error': 'No transcription provided'}), 400
+        
+        if not summarization_service.is_available():
+            return jsonify({'error': 'Summarization service not available. Please set ANTHROPIC_API_KEY'}), 503
+        
+        # Run the async summarization in sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            result = loop.run_until_complete(
+                summarization_service.summarize(
+                    transcription=transcription,
+                    language=language,
+                    custom_prompt=custom_prompt
+                )
+            )
+        finally:
+            loop.close()
+        
+        # Save the summary
+        summary_path = summarization_service.save_summary(
+            summary=result['summary'],
+            original_filename='transcription',
+            language=language
+        )
+        
+        # Get relative path for serving
+        relative_path = os.path.relpath(summary_path, TEMP_DIR)
+        
+        return jsonify({
+            'summary': result['summary'],
+            'summary_path': relative_path,
+            'metadata': result['metadata']
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error during summarization: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 

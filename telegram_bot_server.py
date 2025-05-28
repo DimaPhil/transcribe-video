@@ -18,6 +18,7 @@ from transcriber import get_media_processor
 from youtube_service import YouTubeService
 from google_drive_service import GoogleDriveService
 from linkedin_service import LinkedInService
+from summarization_service import SummarizationService
 
 load_dotenv()
 
@@ -200,12 +201,16 @@ class TranscriptionQueue:
                 caption += f"• Characters: {char_count:,}\n"
                 if duration:
                     caption += f"• Duration: {minutes}m {seconds}s"
+                caption += f"\n\n💡 Use /summary to summarize this transcription!"
                 
                 asyncio.run(self.bot.send_file(
                     task.chat_id,
                     temp_file.name,
                     caption
                 ))
+                
+                # Store transcription in user context
+                asyncio.run(self.bot.store_user_transcription(task.chat_id, transcription))
 
                 # Cleanup
                 os.unlink(temp_file.name)
@@ -235,6 +240,9 @@ class TranscriptionBot:
         self.whitelist: Set[int] = self.load_whitelist()
         self.queue = TranscriptionQueue(self)
         self.user_cookies: Dict[int, str] = {}  # Store user cookies paths
+        self.user_transcriptions: Dict[int, str] = {}  # Store last transcription per user
+        self.user_summaries: Dict[int, Dict[str, any]] = {}  # Store last summary per user for iterative refinement
+        self.summarization_service = SummarizationService()
         
         # Create temp directory if it doesn't exist
         os.makedirs(CONFIG['temp_dir'], exist_ok=True)
@@ -450,6 +458,12 @@ class TranscriptionBot:
         if context.user_data.get('expecting_cookies'):
             logger.info("Redirecting to cookies handler")
             await self.handle_cookies_file(update, context)
+            return
+        
+        # Check if we're expecting summary file
+        if context.user_data.get('expecting_summary_file'):
+            logger.info("Redirecting to summary file handler")
+            await self.handle_summary_file(update, context)
             return
         
         # Check file extension
@@ -879,6 +893,7 @@ class TranscriptionBot:
 • `/start` - Welcome message and quick start guide
 • `/help` - Show this help message
 • `/transcribe` (or `/ts`) - Transcribe audio/video
+• `/summary` - Summarize transcriptions
 • `/status` - Check queue status
 • `/setcookies` - Upload YouTube cookies for restricted videos
 • `/removecookies` - Delete your stored cookies
@@ -910,15 +925,271 @@ class TranscriptionBot:
 • `/ts https://drive.google.com/file/d/.../view`
 • Send any audio/video file directly
 
+🤖 **Summarization:**
+• `/summary` - Summarize last transcription
+• `/summary --lang ru` - Summarize in Russian
+• `/summary Your text here` - Summarize provided text
+• `/summary Refine with more focus on X` - Refine previous summary
+• Attach .txt file after `/summary` to summarize it
+
 💡 **Tips:**
 • Use URLs for files larger than {max_size}
 • Custom prompts improve technical content accuracy
 • Check `/status` to see queue progress
 • Cookies are auto-deleted after 24h for security
+• Summaries support iterative refinement
 
 Need more help? Check the project documentation!"""
         
         await update.message.reply_text(help_text)
+    
+    async def store_user_transcription(self, chat_id: int, transcription: str):
+        """Store transcription in user context"""
+        self.user_transcriptions[chat_id] = transcription
+        logger.info(f"Stored transcription for user {chat_id}")
+    
+    async def summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /summary command"""
+        if not self.check_whitelist(update.effective_user.id):
+            await update.message.reply_text(
+                "Sorry, you are not authorized to use this bot."
+            )
+            return
+        
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        # Check if we're refining a previous summary
+        has_previous_summary = user_id in self.user_summaries
+        
+        # Extract parameters from the command
+        custom_prompt = None
+        language = 'en'  # Default language
+        
+        # Parse command arguments
+        if context.args:
+            args_text = " ".join(context.args)
+            
+            # Check for language specification
+            if "--lang" in args_text:
+                parts = args_text.split("--lang")
+                if len(parts) > 1:
+                    lang_part = parts[1].strip().split()[0]
+                    if lang_part in ['en', 'ru']:
+                        language = lang_part
+                    # Remove language part from args
+                    args_text = parts[0].strip()
+                    if len(parts[1].strip().split()) > 1:
+                        args_text += " " + " ".join(parts[1].strip().split()[1:])
+            
+            # Rest is custom prompt
+            if args_text.strip():
+                custom_prompt = args_text.strip()
+        
+        # Initialize transcription_text
+        transcription_text = None
+        
+        # Check if there's text after the command (inline transcription)
+        if update.message.text and len(update.message.text.split(None, 1)) > 1:
+            # User provided text directly with the command
+            command_parts = update.message.text.split(None, 1)
+            if len(command_parts) > 1:
+                transcription_text = command_parts[1]
+                # If it's a refinement request (no new transcription), use it as feedback
+                if has_previous_summary and user_id in self.user_transcriptions:
+                    custom_prompt = transcription_text
+                    transcription_text = self.user_transcriptions[user_id]
+        
+        # If no inline text, check if we have a stored transcription
+        if transcription_text is None and user_id in self.user_transcriptions:
+            transcription_text = self.user_transcriptions[user_id]
+        
+        # If still no transcription, prompt user to provide one
+        if transcription_text is None:
+            await update.message.reply_text(
+                "📝 **No transcription found!**\n\n"
+                "Please provide a transcription in one of these ways:\n"
+                "1️⃣ First use /transcribe to transcribe a file\n"
+                "2️⃣ Send text directly: `/summary Your text here...`\n"
+                "3️⃣ Attach a text file (.txt) after /summary\n\n"
+                "You can also specify language:\n"
+                "`/summary --lang ru` (for Russian)\n\n"
+                "Or add custom instructions:\n"
+                "`/summary Focus on technical details`"
+            )
+            context.user_data['expecting_summary_file'] = True
+            context.user_data['summary_language'] = language
+            context.user_data['summary_custom_prompt'] = custom_prompt
+            return
+        
+        # Process the summarization
+        await self._process_summarization(
+            update, 
+            context,
+            transcription_text,
+            language,
+            custom_prompt,
+            has_previous_summary
+        )
+    
+    async def _process_summarization(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                   transcription_text: str, language: str = 'en', 
+                                   custom_prompt: Optional[str] = None,
+                                   is_refinement: bool = False):
+        """Process the summarization request"""
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        try:
+            # Send processing message
+            status_msg = await update.message.reply_text(
+                f"🤖 {'Refining' if is_refinement else 'Generating'} summary"
+                f"{' in Russian' if language == 'ru' else ''}..."
+            )
+            
+            # Prepare for refinement if applicable
+            previous_summary = None
+            feedback = None
+            
+            if is_refinement and user_id in self.user_summaries:
+                previous_summary = self.user_summaries[user_id].get('summary')
+                feedback = custom_prompt
+                custom_prompt = None  # Clear custom prompt for refinement
+            
+            # Perform summarization
+            result = await self.summarization_service.summarize(
+                transcription_text,
+                language=language,
+                custom_prompt=custom_prompt,
+                previous_summary=previous_summary,
+                feedback=feedback
+            )
+            
+            if result['success']:
+                summary = result['summary']
+                
+                # Store the summary for potential refinement
+                self.user_summaries[user_id] = {
+                    'summary': summary,
+                    'language': language
+                }
+                
+                # Save summary to file
+                temp_file = tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=f'_summary_{language}.txt',
+                    mode='w',
+                    encoding='utf-8'
+                )
+                temp_file.write(summary)
+                temp_file.close()
+                
+                # Calculate stats
+                word_count = len(summary.split())
+                char_count = len(summary)
+                
+                # Prepare caption
+                caption = f"✨ Summary {'refined' if is_refinement else 'generated'} successfully!\n\n"
+                caption += f"📊 Summary Stats:\n"
+                caption += f"• Words: {word_count:,}\n"
+                caption += f"• Characters: {char_count:,}\n"
+                caption += f"• Language: {'Russian' if language == 'ru' else 'English'}\n\n"
+                caption += f"💡 To refine, use: `/summary Your feedback here...`"
+                
+                # Send the file
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=open(temp_file.name, 'rb'),
+                    caption=caption
+                )
+                
+                # If summary is short enough, also send as text
+                if char_count < 3000:
+                    summary_preview = f"📝 **Summary:**\n\n{summary}"
+                    if len(summary_preview) > 4096:
+                        # Trim if needed for Telegram message limit
+                        summary_preview = summary_preview[:4090] + "..."
+                    await update.message.reply_text(summary_preview)
+                
+                # Cleanup
+                os.unlink(temp_file.name)
+                
+                # Delete status message
+                await status_msg.delete()
+                
+            else:
+                error_msg = result.get('error', 'Unknown error occurred')
+                await status_msg.edit_text(
+                    f"❌ Summarization failed:\n{error_msg}"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in summarization: {e}")
+            await update.message.reply_text(
+                f"❌ An error occurred during summarization:\n{str(e)}"
+            )
+    
+    async def handle_summary_file(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text file for summarization"""
+        if not context.user_data.get('expecting_summary_file'):
+            return
+        
+        if not update.message.document:
+            return
+        
+        # Check file extension
+        if not update.message.document.file_name.endswith('.txt'):
+            await update.message.reply_text(
+                "Please send a text file (.txt) containing the transcription."
+            )
+            return
+        
+        try:
+            # Download the file
+            file = await context.bot.get_file(update.message.document.file_id)
+            
+            # Create temp file
+            temp_path = os.path.join(
+                CONFIG['temp_dir'],
+                f"summary_input_{update.effective_user.id}_{int(time.time())}.txt"
+            )
+            
+            await file.download_to_drive(temp_path)
+            
+            # Read the content
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                transcription_text = f.read()
+            
+            # Store in user context
+            self.user_transcriptions[update.effective_user.id] = transcription_text
+            
+            # Get stored parameters
+            language = context.user_data.get('summary_language', 'en')
+            custom_prompt = context.user_data.get('summary_custom_prompt')
+            
+            # Clear flags
+            context.user_data['expecting_summary_file'] = False
+            
+            # Process summarization
+            await self._process_summarization(
+                update,
+                context,
+                transcription_text,
+                language,
+                custom_prompt,
+                False
+            )
+            
+            # Cleanup
+            os.unlink(temp_path)
+            
+        except Exception as e:
+            logger.error(f"Error processing summary file: {e}")
+            await update.message.reply_text(
+                f"❌ Error processing file: {str(e)}"
+            )
+        finally:
+            context.user_data['expecting_summary_file'] = False
 
 def main():
     """Start the bot"""
@@ -960,6 +1231,7 @@ def main():
     application.add_handler(CommandHandler('start', bot.start_command))
     application.add_handler(CommandHandler('help', bot.help_command))
     application.add_handler(CommandHandler(['transcribe', 'ts'], bot.handle_transcribe_command))
+    application.add_handler(CommandHandler('summary', bot.summary_command))
     application.add_handler(CommandHandler('status', bot.status_command))
     application.add_handler(CommandHandler('setcookies', bot.setcookies_command))
     application.add_handler(CommandHandler('removecookies', bot.removecookies_command))

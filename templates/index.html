@@ -193,20 +193,82 @@
 
             <!-- Transcription Result -->
             <div id="transcriptionResult" class="hidden">
-                <div class="flex justify-between items-center mb-2">
-                    <h2 class="text-lg font-semibold text-gray-800">
-                        <i class="fas fa-file-alt mr-2"></i>Transcription
-                    </h2>
-                    <div class="flex gap-2">
-                        <button id="downloadTranscription" class="text-blue-500 hover:text-blue-600 transition-colors">
-                            <i class="fas fa-download mr-1"></i>Download
-                        </button>
-                        <button id="copyTranscription" class="text-blue-500 hover:text-blue-600 transition-colors">
-                            <i class="fas fa-copy mr-1"></i>Copy
+                <div class="border rounded-lg overflow-hidden">
+                    <div class="flex justify-between items-center p-4 bg-gray-50">
+                        <h2 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-file-alt mr-2"></i>Transcription
+                        </h2>
+                        <div class="flex gap-2 items-center">
+                            <button id="toggleTranscription" class="text-gray-600 hover:text-gray-800 transition-colors">
+                                <i class="fas fa-chevron-up" id="transcriptionToggleIcon"></i>
+                            </button>
+                            <button id="downloadTranscription" class="text-blue-500 hover:text-blue-600 transition-colors">
+                                <i class="fas fa-download mr-1"></i>Download
+                            </button>
+                            <button id="copyTranscription" class="text-blue-500 hover:text-blue-600 transition-colors">
+                                <i class="fas fa-copy mr-1"></i>Copy
+                            </button>
+                        </div>
+                    </div>
+                    <div id="transcriptionContent" class="border-t">
+                        <div id="transcriptionText" class="p-4 bg-white text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto"></div>
+                    </div>
+                </div>
+                
+                <!-- Summarization Section -->
+                <div id="summarizationSection" class="mt-6">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            <i class="fas fa-compress-alt mr-2"></i>Summarization Options
+                        </h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="summaryLanguage" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-language mr-1"></i>Summary Language
+                                </label>
+                                <select id="summaryLanguage" class="w-full p-2 border rounded-md bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                                    <option value="en">English</option>
+                                    <option value="ru">Russian</option>
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label for="summaryCustomPrompt" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-magic mr-1"></i>Custom Instructions (Optional)
+                                </label>
+                                <input type="text" id="summaryCustomPrompt" 
+                                    class="w-full p-2 border rounded-md bg-white shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                    placeholder="e.g., Focus on technical details">
+                            </div>
+                        </div>
+                        
+                        <button id="summarizeBtn" class="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors flex items-center justify-center font-medium">
+                            <i class="fas fa-magic mr-2"></i>
+                            <span>Generate Summary</span>
                         </button>
                     </div>
                 </div>
-                <div id="transcriptionText" class="p-4 bg-gray-50 rounded-md border text-gray-700 whitespace-pre-wrap"></div>
+            </div>
+            
+            <!-- Summary Result -->
+            <div id="summaryResult" class="hidden mt-6">
+                <div class="border rounded-lg overflow-hidden">
+                    <div class="flex justify-between items-center p-4 bg-green-50">
+                        <h2 class="text-lg font-semibold text-gray-800">
+                            <i class="fas fa-compress-alt mr-2"></i>Summary
+                        </h2>
+                        <div class="flex gap-2">
+                            <button id="downloadSummary" class="text-green-600 hover:text-green-700 transition-colors">
+                                <i class="fas fa-download mr-1"></i>Download
+                            </button>
+                            <button id="copySummary" class="text-green-600 hover:text-green-700 transition-colors">
+                                <i class="fas fa-copy mr-1"></i>Copy
+                            </button>
+                        </div>
+                    </div>
+                    <div id="summaryText" class="p-4 bg-white text-gray-700 whitespace-pre-wrap"></div>
+                </div>
             </div>
 
             <!-- Error Alert -->
@@ -263,8 +325,21 @@
         const downloadTranscription = document.getElementById('downloadTranscription');
         const youtubeCookiesSection = document.getElementById('youtubeCookiesSection');
         const youtubeCookies = document.getElementById('youtubeCookies');
+        
+        // Summarization elements
+        const toggleTranscription = document.getElementById('toggleTranscription');
+        const transcriptionContent = document.getElementById('transcriptionContent');
+        const transcriptionToggleIcon = document.getElementById('transcriptionToggleIcon');
+        const summarizeBtn = document.getElementById('summarizeBtn');
+        const summaryLanguage = document.getElementById('summaryLanguage');
+        const summaryCustomPrompt = document.getElementById('summaryCustomPrompt');
+        const summaryResult = document.getElementById('summaryResult');
+        const summaryText = document.getElementById('summaryText');
+        const copySummary = document.getElementById('copySummary');
+        const downloadSummary = document.getElementById('downloadSummary');
 
         let currentVideoPath = null;
+        let currentSummaryPath = null;
         let currentTranscriptionPath = null;
         let youtubeCookiesFile = null;
 
@@ -693,6 +768,22 @@
                 
                 // Store the transcription path for download
                 currentTranscriptionPath = data.transcription_path;
+                
+                // Show only first 500 characters by default (collapsed)
+                const fullText = data.transcription;
+                const previewLength = 500;
+                if (fullText.length > previewLength) {
+                    document.getElementById('transcriptionText').textContent = fullText.substring(0, previewLength) + '...';
+                    document.getElementById('transcriptionText').dataset.fullText = fullText;
+                    document.getElementById('transcriptionText').dataset.isCollapsed = 'true';
+                } else {
+                    document.getElementById('transcriptionText').dataset.isCollapsed = 'false';
+                }
+                
+                // Reset summary
+                summaryResult.classList.add('hidden');
+                summaryText.textContent = '';
+                currentSummaryPath = null;
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -732,6 +823,108 @@
             const a = document.createElement('a');
             a.href = downloadUrl;
             a.download = currentTranscriptionPath.split('/').pop();
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        // Toggle transcription collapse/expand
+        toggleTranscription.addEventListener('click', function() {
+            const textElement = document.getElementById('transcriptionText');
+            const isCollapsed = textElement.dataset.isCollapsed === 'true';
+            
+            if (isCollapsed && textElement.dataset.fullText) {
+                // Expand
+                textElement.textContent = textElement.dataset.fullText;
+                textElement.dataset.isCollapsed = 'false';
+                transcriptionToggleIcon.className = 'fas fa-chevron-up';
+                textElement.classList.remove('max-h-64');
+            } else if (!isCollapsed && textElement.dataset.fullText) {
+                // Collapse
+                textElement.textContent = textElement.dataset.fullText.substring(0, 500) + '...';
+                textElement.dataset.isCollapsed = 'true';
+                transcriptionToggleIcon.className = 'fas fa-chevron-down';
+                textElement.classList.add('max-h-64');
+            }
+        });
+        
+        // Summarize button handler
+        summarizeBtn.addEventListener('click', async function() {
+            const transcriptionText = document.getElementById('transcriptionText');
+            const fullText = transcriptionText.dataset.fullText || transcriptionText.textContent;
+            
+            if (!fullText) {
+                showError('No transcription available to summarize');
+                return;
+            }
+            
+            updateLoadingState(true, 'Generating summary...', 'This may take a moment');
+            this.disabled = true;
+            
+            try {
+                const response = await fetch('/summarize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        transcription: fullText,
+                        language: summaryLanguage.value,
+                        custom_prompt: summaryCustomPrompt.value.trim() || null
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                summaryResult.classList.remove('hidden');
+                summaryText.textContent = data.summary;
+                currentSummaryPath = data.summary_path;
+                
+                // Scroll to summary
+                summaryResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                updateLoadingState(false);
+                this.disabled = false;
+            }
+        });
+        
+        // Copy summary handler
+        copySummary.addEventListener('click', async function() {
+            const text = summaryText.textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                const originalText = this.innerHTML;
+                this.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+                setTimeout(() => {
+                    this.innerHTML = originalText;
+                }, 2000);
+            } catch (err) {
+                showError('Failed to copy to clipboard');
+            }
+        });
+        
+        // Download summary handler
+        downloadSummary.addEventListener('click', function() {
+            if (!currentSummaryPath) {
+                showError('No summary available to download');
+                return;
+            }
+            
+            const encodedPath = currentSummaryPath.split('/').map(component => 
+                encodeURIComponent(component)
+            ).join('/');
+            
+            const downloadUrl = `/temp_resources/${encodedPath}`;
+            
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = currentSummaryPath.split('/').pop();
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

@@ -25,6 +25,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082"]
       interval: 1m
@@ -75,6 +76,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - TELEGRAM_BOT_API_URL=http://telegram-bot-api:8081/bot
       - TELEGRAM_API_DATA_DIR=${TELEGRAM_API_DATA_DIR:-/var/lib/telegram-bot-api}
       - TELEGRAM_API_MOUNT_PATH=${TELEGRAM_API_MOUNT_PATH:-/telegram-bot-api-files}
