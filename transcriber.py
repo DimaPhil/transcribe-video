@@ -434,20 +434,59 @@ class MediaProcessorService:
             return TranscriptionResponse(combined_text)
         
         else:
-            # For smaller files, just use the API directly
+            # For smaller files, check if we need to extract audio first
             print("Audio within size limits. Transcribing in one call.")
-            try:
-                response = self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=open(audio_file, "rb"),
-                    prompt=prompt
-                )
-                print(f"Transcription complete: {len(response.text)} characters")
-                return response
-            except Exception as e:
-                error_msg = f"Error during transcription: {e}"
-                print(error_msg)
-                raise ValueError(error_msg)
+            
+            # Check if the file is a video format that needs audio extraction
+            _, file_ext = os.path.splitext(audio_file)
+            file_ext = file_ext.lower()
+            
+            # OpenAI Whisper API supported formats
+            whisper_supported_formats = ['.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm']
+            
+            # If the file is not directly supported by Whisper API, extract audio first
+            if file_ext not in whisper_supported_formats:
+                print(f"File format {file_ext} not directly supported by Whisper API. Extracting audio...")
+                temp_audio_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+                temp_audio_file.close()
+                
+                try:
+                    # Export audio to MP3 format
+                    audio.export(temp_audio_file.name, format="mp3")
+                    print(f"Audio extracted to temporary file: {temp_audio_file.name}")
+                    
+                    # Transcribe the extracted audio
+                    response = self.client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=open(temp_audio_file.name, "rb"),
+                        prompt=prompt
+                    )
+                    print(f"Transcription complete: {len(response.text)} characters")
+                    
+                    # Clean up temp file
+                    os.unlink(temp_audio_file.name)
+                    return response
+                except Exception as e:
+                    # Clean up temp file in case of error
+                    if os.path.exists(temp_audio_file.name):
+                        os.unlink(temp_audio_file.name)
+                    error_msg = f"Error during transcription: {e}"
+                    print(error_msg)
+                    raise ValueError(error_msg)
+            else:
+                # File is already in a supported format, send directly
+                try:
+                    response = self.client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=open(audio_file, "rb"),
+                        prompt=prompt
+                    )
+                    print(f"Transcription complete: {len(response.text)} characters")
+                    return response
+                except Exception as e:
+                    error_msg = f"Error during transcription: {e}"
+                    print(error_msg)
+                    raise ValueError(error_msg)
 
     def cleanup_temp_files(self, file_path):
         """Clean up temporary files and directories"""
